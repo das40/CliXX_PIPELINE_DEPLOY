@@ -1,0 +1,27 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      - pip install yq
+      - pip install boto3
+  pre_build:
+    commands:
+      - echo "Starting CliXX deployment"
+      - echo "more commands"
+  build:
+    on-failure: ABORT
+    commands:
+      - echo starting build on `date`
+      - echo "Creating CliXX Security Group for apps and database"
+      - |
+          flag="destroy"
+          if [[ $flag == 'create' ]]
+          then
+              python assume_role.py
+          elif [[ $flag == 'destroy' ]]
+          then
+              python destroy_CliXX.py
+          fi
+  post_build:
+    commands:
+      - echo Build completed on `date`
