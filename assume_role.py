@@ -24,7 +24,7 @@ try:
         aws_access_key_id=credentials['AccessKeyId'],
         aws_secret_access_key=credentials['SecretAccessKey'],
         aws_session_token=credentials['SessionToken'],
-        region_name='us-west-2'  # Specify your region here
+        region_name='us-east-1'  # Specify your region here
     )
 
     # Check if the security group already exists
