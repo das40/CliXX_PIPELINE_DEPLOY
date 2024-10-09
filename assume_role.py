@@ -1,20 +1,33 @@
 #!/usr/bin/python
 
-import boto3,botocore
+import boto3
+import botocore
+from botocore.exceptions import ClientError
 
-sts_client=boto3.client('sts')
+# Create STS client
+sts_client = boto3.client('sts')
 
-#Calling the assume_role function
-assumed_role_object=sts_client.assume_role(RoleArn='arn:aws:iam::619071313311:role/Engineer', RoleSessionName='mysession')
+try:
+    # Calling the assume_role function
+    assumed_role_object = sts_client.assume_role(
+        RoleArn='arn:aws:iam::619071313311:role/Engineer', 
+        RoleSessionName='mysession'
+    )
+    
+    # Extract credentials
+    credentials = assumed_role_object['Credentials']
+    print("Assumed role successfully.")
+    
+    # Create EC2 client using the assumed role credentials
+    ec2 = boto3.client(
+        'ec2',
+        aws_access_key_id=credentials['AccessKeyId'],
+        aws_secret_access_key=credentials['SecretAccessKey'],
+        aws_session_token=credentials['SessionToken'],
+        region_name='us-west-2'  # Specify your region here
+    )
 
-credentials=assumed_role_object['Credentials']
-
-print(credentials)
-
-
-ec2=boto3.client('ec2',aws_access_key_id=credentials['AccessKeyId'],aws_secret_access_key=credentials['SecretAccessKey'],aws_session_token=credentials['SessionToken'])
-
-# Check if the security group already exists
+    # Check if the security group already exists
     try:
         response = ec2.describe_security_groups(GroupNames=['my-security-group'])
         print("Security group already exists:", response['SecurityGroups'][0]['GroupId'])
@@ -33,4 +46,3 @@ ec2=boto3.client('ec2',aws_access_key_id=credentials['AccessKeyId'],aws_secret_a
 
 except ClientError as e:
     print("Error assuming role or making AWS requests:", e)
-
