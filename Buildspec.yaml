@@ -17,7 +17,7 @@ phases:
           flag="create"
           if [[ $flag == 'create' ]]
           then
-              python assume_role.py
+              python create.clixx.py
           elif [[ $flag == 'destroy' ]]
           then
               python destroy_CliXX.py
