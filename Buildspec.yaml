@@ -17,7 +17,7 @@ phases:
           flag="create"
           if [[ $flag == 'create' ]]
           then
-              python create.clixx.py
+              python create_clixx.py
           elif [[ $flag == 'destroy' ]]
           then
               python destroy_CliXX.py
