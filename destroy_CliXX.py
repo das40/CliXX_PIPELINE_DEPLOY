@@ -17,6 +17,6 @@ ec2=boto3.client('ec2',aws_access_key_id=credentials['AccessKeyId'],aws_secret_a
 
 response = ec2.delete_security_group(
     #GroupId='string',
-    GroupName='my-security-group'
+    GroupName=''
     )
 print(response)
