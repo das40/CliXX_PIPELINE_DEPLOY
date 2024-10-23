@@ -26,6 +26,15 @@ try:
         aws_session_token=credentials['SessionToken'],
         region_name='us-east-1'  # Specify your region here
     )
+    
+    # Fetch the default VPC (if needed)
+    try:
+        default_vpc = ec2.describe_vpcs(Filters=[{'Name': 'isDefault', 'Values': ['true']}])
+        vpc_id = default_vpc['Vpcs'][0]['VpcId']
+        print(f"Using default VPC: {vpc_id}")
+    except ClientError as e:
+        print("Error fetching default VPC:", e)
+        raise e
 
     # Check if the security group already exists
     try:
@@ -34,11 +43,11 @@ try:
     except ClientError as e:
         if 'InvalidGroup.NotFound' in str(e):
             print("Security group not found, creating it now...")
-            # Try creating the security group
+            # Try creating the security group in the default VPC
             response = ec2.create_security_group(
                 Description='My security group',
                 GroupName='my-security-group',
-                VpcId='vpc-0d9565fdd6b841224'  # Replace with your actual VPC ID
+                VpcId=vpc_id  # Use the fetched VPC ID
             )
             print("Security group created successfully:", response['GroupId'])
         else:
