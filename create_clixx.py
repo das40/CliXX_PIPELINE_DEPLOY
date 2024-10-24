@@ -1,4 +1,5 @@
 import boto3
+from botocore.exceptions import ClientError
 
 # Initialize the boto3 clients
 ec2_client = boto3.client('ec2')
@@ -27,7 +28,6 @@ def create_subnet(vpc_id, cidr_block, availability_zone, public_ip=False):
     subnet_id = response['Subnet']['SubnetId']
     
     if public_ip:
-        # Enable public IP on launch for this subnet
         ec2_client.modify_subnet_attribute(
             SubnetId=subnet_id,
             MapPublicIpOnLaunch={'Value': True}
@@ -37,10 +37,7 @@ def create_subnet(vpc_id, cidr_block, availability_zone, public_ip=False):
 
 # Step 4: Create Security Group
 def create_security_group(vpc_id, group_name, description):
-    ec2_client = boto3.client('ec2')
-    
     try:
-        # Create security group
         response = ec2_client.create_security_group(GroupName=group_name, Description=description, VpcId=vpc_id)
         security_group_id = response['GroupId']
         print(f'Security group {group_name} created with ID: {security_group_id}')
@@ -48,25 +45,21 @@ def create_security_group(vpc_id, group_name, description):
         # Check existing egress rules
         existing_rules = ec2_client.describe_security_groups(GroupIds=[security_group_id])['SecurityGroups'][0]['IpPermissionsEgress']
         
-        # If there are no egress rules, or the specific rule doesn't exist, add it
-        if not any(rule['IpProtocol'] == '-1' and 
-                   any(ip['CidrIp'] == '0.0.0.0/0' for ip in rule['IpRanges']) 
-                   for rule in existing_rules):
+        # If there are no egress rules or the specific rule doesn't exist, add it
+        if not any(rule['IpProtocol'] == '-1' and any(ip['CidrIp'] == '0.0.0.0/0' for ip in rule['IpRanges']) for rule in existing_rules):
             ec2_client.authorize_security_group_egress(
                 GroupId=security_group_id,
-                IpPermissions=[
-                    {
-                        'IpProtocol': '-1',  # All traffic
-                        'FromPort': 0,
-                        'ToPort': 65535,
-                        'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
-                    }
-                ]
+                IpPermissions=[{
+                    'IpProtocol': '-1',  # All traffic
+                    'FromPort': 0,
+                    'ToPort': 65535,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                }]
             )
             print(f'Egress rule added to security group {group_name}.')
         else:
             print(f'Egress rule already exists for security group {group_name}.')
-
+        
         return security_group_id
 
     except ClientError as e:
@@ -106,8 +99,6 @@ def create_route_table(vpc_id, igw_id, subnet_id):
     return rt_id
 
 # Step 7: Create an RDS Instance (Restored from Snapshot)
-from botocore.exceptions import ClientError
-
 def create_rds_instance(db_identifier, db_snapshot_arn, db_subnet_group_name, vpc_security_group_ids):
     try:
         response = rds_client.restore_db_instance_from_db_snapshot(
@@ -123,7 +114,6 @@ def create_rds_instance(db_identifier, db_snapshot_arn, db_subnet_group_name, vp
         return response
     except ClientError as e:
         print(f"Error restoring RDS instance: {e.response['Error']['Message']}")
-
 
 # Step 8: Create a Target Group
 def create_target_group(vpc_id, target_group_name, protocol='HTTP', port=80):
@@ -166,9 +156,7 @@ def create_https_listener(lb_arn, target_group_arn, certificate_arn):
         Protocol='HTTPS',
         Port=443,
         SslPolicy='ELBSecurityPolicy-2016-08',
-        Certificates=[{
-            'CertificateArn': certificate_arn
-        }],
+        Certificates=[{'CertificateArn': certificate_arn}],
         DefaultActions=[{
             'Type': 'forward',
             'TargetGroupArn': target_group_arn
@@ -225,7 +213,7 @@ echo "${FILE_SYSTEM_ID}.efs.${REGION}.amazonaws.com:/ ${MOUNT_POINT} nfs4 nfsver
 mount -a -t nfs4
 chmod -R 755 ${MOUNT_POINT}
 
-# Start and enable Apache
+# Start and enable Apache and MariaDB services
 sudo systemctl start httpd
 sudo systemctl enable httpd
 sudo systemctl start mariadb
@@ -233,87 +221,72 @@ sudo systemctl enable mariadb
 
 # Add ec2-user to Apache group and modify permissions for /var/www
 sudo usermod -a -G apache ec2-user
-sudo chown -R ec2-user:apache /var/www
-sudo chmod 2775 /var/www && find /var/www -type d -exec sudo chmod 2775 {} \;
-find /var/www -type f -exec sudo chmod 0664 {} \;
+sudo chown -R ec2-user:apache ${MOUNT_POINT}
+sudo chmod -R 775 ${MOUNT_POINT}
 
-# Clone your repository and set up WordPress configuration
-cd /var/www/html
-git clone https://github.com/stackitgit/CliXX_Retail_Repository.git
-cp -r CliXX_Retail_Repository/* .
-rm -rf CliXX_Retail_Repository
-cp wp-config-sample.php wp-config.php
+# Download and configure WordPress
+cd ${MOUNT_POINT}
+wget https://wordpress.org/latest.tar.gz
+tar -xzf latest.tar.gz
+cp -r wordpress/* ${MOUNT_POINT}
+rm -rf wordpress latest.tar.gz
 
-# Setup WordPress config
-sed -i "s/database_name_here/${DB_NAME}/" wp-config.php
-sed -i "s/username_here/${DB_USER}/" wp-config.php
-sed -i "s/password_here/${DB_USER_PASSWORD}/" wp-config.php
-sed -i "s/localhost/${DB_HOST}/" wp-config.php
+# Create a wp-config.php file
+cat > ${MOUNT_POINT}/wp-config.php <<EOL
+define('DB_NAME', '${DB_NAME}');
+define('DB_USER', '${DB_USER}');
+define('DB_PASSWORD', '${DB_USER_PASSWORD}');
+define('DB_HOST', '${DB_HOST}');
+define('DB_CHARSET', 'utf8');
+define('DB_COLLATE', '');
+define('AUTH_KEY', 'put your unique phrase here');
+define('SECURE_AUTH_KEY', 'put your unique phrase here');
+define('LOGGED_IN_KEY', 'put your unique phrase here');
+define('NONCE_KEY', 'put your unique phrase here');
+define('AUTH_SALT', 'put your unique phrase here');
+define('SECURE_AUTH_SALT', 'put your unique phrase here');
+define('LOGGED_IN_SALT', 'put your unique phrase here');
+define('NONCE_SALT', 'put your unique phrase here');
+$table_prefix  = 'wp_';
+define('WP_DEBUG', false);
+if ( !defined('ABSPATH') ) {
+    define('ABSPATH', __DIR__ . '/');
+}
+require_once(ABSPATH . 'wp-settings.php');
+EOL
 
-# Enable and start services
-sudo systemctl start httpd
-sudo systemctl enable httpd
+# Create the database and user
+mysql -u root -e "CREATE DATABASE ${DB_NAME};"
+mysql -u root -e "CREATE USER '${DB_USER}'@'%' IDENTIFIED BY '${DB_USER_PASSWORD}';"
+mysql -u root -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%';"
+mysql -u root -e "FLUSH PRIVILEGES;"
 
-# Output the Load Balancer DNS
-echo "Your application is ready at: http://${LB_DNS}"
-
-# Enable HTTPS on Apache
-sudo yum install -y mod_ssl
+# Restart Apache to apply changes
 sudo systemctl restart httpd
 """
 
-# Main execution block
+# Running the functions in sequence
 if __name__ == "__main__":
-    key_pair_name = 'my-key-pair'
-    public_key_path = 'path/to/your/public/key.pub'  # Update this path
-    vpc_cidr_block = '10.0.0.0/16'
-    subnet_cidr_block = '10.0.1.0/24'
-    availability_zone = 'us-east-1a'
+    vpc_id = create_vpc('10.0.0.0/16')
+    subnet_id = create_subnet(vpc_id, '10.0.1.0/24', 'us-east-1a', public_ip=True)
+    security_group_id = create_security_group(vpc_id, 'my_security_group', 'Security group for web application')
+    internet_gateway_id = create_internet_gateway(vpc_id)
+    route_table_id = create_route_table(vpc_id, internet_gateway_id, subnet_id)
     
-    # Create Key Pair
-    #create_key_pair(key_pair_name, public_key_path)
-
-    # Create VPC
-    vpc_id = create_vpc(vpc_cidr_block)
-
-    # Create Subnet
-    subnet_id = create_subnet(vpc_id, subnet_cidr_block, availability_zone, public_ip=True)
-
-    # Create Security Group
-    security_group_id = create_security_group(vpc_id, "wordpress-sg", "Security group for WordPress instances")
-
-    # Create Internet Gateway
-    igw_id = create_internet_gateway(vpc_id)
-
-    # Create Route Table
-    route_table_id = create_route_table(vpc_id, igw_id, subnet_id)
-
-    # Create RDS Instance
-    db_identifier = 'wordpressdb'
-    db_snapshot_arn = 'arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot'  # Update with your snapshot ARN
-    db_subnet_group_name = 'wordpress-db-subnet-group'
-    vpc_security_group_ids = [security_group_id]
+    db_identifier = 'mydb'
+    db_snapshot_arn = 'arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot'
+    db_subnet_group_name = 'mydb-subnet-group'
+    rds_response = create_rds_instance(db_identifier, db_snapshot_arn, db_subnet_group_name, [security_group_id])
     
-    create_rds_instance(db_identifier, db_snapshot_arn, db_subnet_group_name, vpc_security_group_ids)
-
-    # Create Target Group
-    target_group_name = 'wordpress-target-group'
+    target_group_name = 'my-target-group'
     target_group_arn = create_target_group(vpc_id, target_group_name)
+    
+    load_balancer_name = 'my-load-balancer'
+    load_balancer_arn = create_load_balancer([subnet_id], [security_group_id], load_balancer_name)
+    
+    certificate_arn = 'arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805'
+    listener_arn = create_https_listener(load_balancer_arn, target_group_arn, certificate_arn)
 
-    # Create Load Balancer
-    lb_name = 'wordpress-load-balancer'
-    lb_arn = create_load_balancer([subnet_id], [security_group_id], lb_name)
-
-    # Create HTTPS Listener
-    certificate_arn = 'arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805'  # Update with your certificate ARN
-    create_https_listener(lb_arn, target_group_arn, certificate_arn)
-
-    # Create Launch Configuration (optional)
-    launch_config_name = 'wordpress-launch-configuration'
-    # Define other launch configuration details
-
-    # Create Auto Scaling Group
-    autoscaling_group_name = 'wordpress-auto-scaling-group'
+    launch_config_name = 'my-launch-configuration'
+    autoscaling_group_name = 'my-autoscaling-group'
     create_autoscaling_group(launch_config_name, autoscaling_group_name, [subnet_id], target_group_arn)
-
-    print("All resources created successfully.")
