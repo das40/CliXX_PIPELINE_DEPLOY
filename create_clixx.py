@@ -37,26 +37,40 @@ def create_subnet(vpc_id, cidr_block, availability_zone, public_ip=False):
 
 # Step 4: Create Security Group
 def create_security_group(vpc_id, group_name, description):
-    response = ec2_client.create_security_group(
-        GroupName=group_name,
-        Description=description,
-        VpcId=vpc_id
-    )
+    ec2_client = boto3.client('ec2')
     
-    sg_id = response['GroupId']
-    
-    # Allow all outbound traffic (egress)
-    ec2_client.authorize_security_group_egress(
-        GroupId=sg_id,
-        IpPermissions=[
-            {
-                'IpProtocol': '-1',
-                'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
-            }
-        ]
-    )
-    
-    return sg_id
+    try:
+        # Create security group
+        response = ec2_client.create_security_group(GroupName=group_name, Description=description, VpcId=vpc_id)
+        security_group_id = response['GroupId']
+        print(f'Security group {group_name} created with ID: {security_group_id}')
+        
+        # Check existing egress rules
+        existing_rules = ec2_client.describe_security_groups(GroupIds=[security_group_id])['SecurityGroups'][0]['IpPermissionsEgress']
+        
+        # If there are no egress rules, or the specific rule doesn't exist, add it
+        if not any(rule['IpProtocol'] == '-1' and 
+                   any(ip['CidrIp'] == '0.0.0.0/0' for ip in rule['IpRanges']) 
+                   for rule in existing_rules):
+            ec2_client.authorize_security_group_egress(
+                GroupId=security_group_id,
+                IpPermissions=[
+                    {
+                        'IpProtocol': '-1',  # All traffic
+                        'FromPort': 0,
+                        'ToPort': 65535,
+                        'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                    }
+                ]
+            )
+            print(f'Egress rule added to security group {group_name}.')
+        else:
+            print(f'Egress rule already exists for security group {group_name}.')
+
+        return security_group_id
+
+    except ClientError as e:
+        print(f'Error creating security group: {e}')
 
 # Step 5: Create an Internet Gateway and attach to VPC
 def create_internet_gateway(vpc_id):
