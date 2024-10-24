@@ -30,8 +30,6 @@ def create_vpc(cidr_block):
 
 # Step 3: Create Subnets
 def create_subnet(vpc_id, cidr_block, availability_zone, public_ip=False):
-    ec2_client = boto3.client('ec2')
-    
     response = ec2_client.create_subnet(
         VpcId=vpc_id,
         CidrBlock=cidr_block,
@@ -49,12 +47,8 @@ def create_subnet(vpc_id, cidr_block, availability_zone, public_ip=False):
     
     return subnet_id
 
-
 # Step 4: Create Security Group
 def create_security_group(vpc_id, group_name, description):
-    ec2_client = boto3.client('ec2')
-
-    # Create the security group
     response = ec2_client.create_security_group(
         GroupName=group_name,
         Description=description,
@@ -75,8 +69,6 @@ def create_security_group(vpc_id, group_name, description):
     )
     
     return sg_id
-
-    
 
 # Step 5: Create an Internet Gateway and attach to VPC
 def create_internet_gateway(vpc_id):
@@ -134,7 +126,7 @@ def create_target_group(vpc_id, target_group_name, protocol='HTTP', port=80):
         VpcId=vpc_id,
         HealthCheckProtocol=protocol,
         HealthCheckPort=str(port),
-        HealthCheckPath='/inex.php',
+        HealthCheckPath='/index.php',
         HealthCheckIntervalSeconds=30,
         HealthCheckTimeoutSeconds=5,
         HealthyThresholdCount=5,
@@ -163,16 +155,15 @@ def create_load_balancer(subnets, security_groups, lb_name):
 def create_https_listener(lb_arn, target_group_arn, certificate_arn):
     response = elb_client.create_listener(
         LoadBalancerArn=lb_arn,
-        Protocol='HTTPS',            # HTTPS protocol
-        Port=443,                    # Port 443 for HTTPS
-        SslPolicy='ELBSecurityPolicy-2016-08',  # SSL Policy
+        Protocol='HTTPS',
+        Port=443,
+        SslPolicy='ELBSecurityPolicy-2016-08',
         Certificates=[{
-            'CertificateArn': "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"  # ACM certificate
-    
+            'CertificateArn': certificate_arn
         }],
         DefaultActions=[{
             'Type': 'forward',
-            'TargetGroupArn': target_group_arn  # Forwarding traffic to the target group
+            'TargetGroupArn': target_group_arn
         }]
     )
     
@@ -195,6 +186,8 @@ def create_autoscaling_group(launch_config_name, autoscaling_group_name, subnets
     )
     print(f"Auto Scaling Group {autoscaling_group_name} created.")
     return response
+
+# User Data Script
 user_data_script = """#!/bin/bash -x
 
 # Logging setup
@@ -239,115 +232,80 @@ find /var/www -type f -exec sudo chmod 0664 {} \;
 # Clone your repository and set up WordPress configuration
 cd /var/www/html
 git clone https://github.com/stackitgit/CliXX_Retail_Repository.git
-cp -r CliXX_Retail_Repository/* /var/www/html
+cp -r CliXX_Retail_Repository/* .
+rm -rf CliXX_Retail_Repository
+cp wp-config-sample.php wp-config.php
 
-# Setup wp-config.php
-if [ -f "wp-config-sample.php" ]; then
-    cp wp-config-sample.php wp-config.php
-else
-    echo "wp-config-sample.php does not exist!"
-    exit 1
-fi
+# Setup WordPress config
+sed -i "s/database_name_here/${DB_NAME}/" wp-config.php
+sed -i "s/username_here/${DB_USER}/" wp-config.php
+sed -i "s/password_here/${DB_USER_PASSWORD}/" wp-config.php
+sed -i "s/localhost/${DB_HOST}/" wp-config.php
 
-# Replace placeholders in wp-config.php with actual values
-sed -i "s/database_name_here/${DB_NAME}/g" wp-config.php
-sed -i "s/username_here/${DB_USER}/g" wp-config.php
-sed -i "s/password_here/${DB_USER_PASSWORD}/g" wp-config.php
-sed -i "s/localhost/${DB_HOST}/g" wp-config.php
+# Enable and start services
+sudo systemctl start httpd
+sudo systemctl enable httpd
 
-# Update Apache configuration to allow WordPress permalinks
-sudo sed -i '151s/None/All/' /etc/httpd/conf/httpd.conf
+# Output the Load Balancer DNS
+echo "Your application is ready at: http://${LB_DNS}"
 
-# Adjust file and directory ownership and permissions
-sudo chown -R apache /var/www
-sudo chgrp -R apache /var/www
-sudo chmod 2775 /var/www
-find /var/www -type d -exec sudo chmod 2775 {} \;
-find /var/www -type f -exec sudo chmod 0664 {} \;
-
-# Check if DNS is already in the wp_options table (matching your actual setup)
-output_variable=$(mysql -u ${DB_USER} -p${DB_USER_PASSWORD} -h ${DB_HOST} -D ${DB_NAME} -sse "select option_value from wp_options where option_value like '%${DNS}%';")
-
-if [[ "${output_variable}" == "${DNS}" ]]; then
-    echo "DNS Address is already in the table"
-else
-    echo "DNS Address is not in the table, updating..."
-    mysql -u ${DB_USER} -p${DB_USER_PASSWORD} -h ${DB_HOST} -D ${DB_NAME} -e "UPDATE wp_options SET option_value ='${DNS}' WHERE option_value LIKE '%${DNS}%';"
-fi
-
-# Restart and enable Apache
+# Enable HTTPS on Apache
+sudo yum install -y mod_ssl
 sudo systemctl restart httpd
-
-# Update RDS with Load Balancer DNS
-UPDATE_SITEURL="UPDATE wp_options SET option_value='https://${LB_DNS}' WHERE option_name='siteurl';"
-UPDATE_HOME="UPDATE wp_options SET option_value='https://${LB_DNS}' WHERE option_name='home';"
-
-# Execute the update queries
-mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_USER_PASSWORD} -D ${DB_NAME} -e "${UPDATE_SITEURL}"
-mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_USER_PASSWORD} -D ${DB_NAME} -e "${UPDATE_HOME}"
-
-# Check if MySQL query was successful
-if (( $? == 0 )); then
-    echo "MySQL update successful"
-else
-    echo "MySQL update failed"
-    exit 1
-fi
-
-# Set TCP keepalive settings
-sudo /sbin/sysctl -w net.ipv4.tcp_keepalive_time=200 net.ipv4.tcp_keepalive_intvl=200 net.ipv4.tcp_keepalive_probes=5
 """
-# Step 12: Create Launch Configuration
-def create_launch_configuration(lc_name, ami_id, instance_type, key_pair, sg_ids, user_data_script):
-    response = autoscaling_client.create_launch_configuration(
-        LaunchConfigurationName=lc_name,
-        ImageId=ami_id,
-        InstanceType=instance_type,
-        KeyName=key_pair,
-        SecurityGroups=sg_ids,
-        UserData=user_data_script
-    )
-    print(f"Launch Configuration {lc_name} created.")
-    return response
 
-# Main function to orchestrate the resource creation
-def main():
-    # Key pair and VPC setup
-    key_pair_name = "keypair_alpha"
-    public_key_path = "path/to/public_key.pem"
-    vpc_cidr = "10.0.0.0/16"
-    vpc_id = create_vpc(vpc_cidr)
-
-    # Create public and private subnets
-    public_subnet_id = create_subnet(vpc_id, "10.0.0.0/24", "us-east-1a", public_ip=True)
-    private_subnet_id = create_subnet(vpc_id, "10.0.1.0/24", "us-east-1a")
-
-    # Create security groups
-    public_sg_id = create_security_group(vpc_id, "sg_public_alpha", "Public SG", 
-        [{'protocol': 'tcp', 'from_port': 22, 'to_port': 22, 'cidr_block': '0.0.0.0/0'}],
-        [{'protocol': '-1', 'from_port': 0, 'to_port': 0, 'cidr_block': '0.0.0.0/0'}])
-
-    # Create Internet Gateway and Route Table
-    igw_id = create_internet_gateway(vpc_id)
-    route_table_id = create_route_table(vpc_id, igw_id, public_subnet_id)
-
-    # Example RDS Instance creation (using a snapshot)
-    db_subnet_group = "rds-subnet-group"
-    db_snapshot_arn = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"
-    create_rds_instance("db_instance_alpha", db_snapshot_arn, db_subnet_group, [public_sg_id])
-
-    # Create Target Group and Load Balancer
-    target_group_arn = create_target_group(vpc_id, "tg_alpha")
-    lb_arn = create_load_balancer([public_subnet_id], [public_sg_id], "lb_alpha")
-    create_listener(lb_arn, target_group_arn)
-
-    # Auto Scaling Group creation
-    lc_name = "lc_alpha"
-    ami_id = "ami-08f3d892de259504d"
-    instance_type = "t2.micro"
-    user_data_script = "#!/bin/bash\necho Hello World"
-    create_launch_configuration(lc_name, ami_id, instance_type, key_pair_name, [public_sg_id], user_data_script)
-    create_autoscaling_group(lc_name, "asg_alpha", [public_subnet_id], target_group_arn)
-
+# Main execution block
 if __name__ == "__main__":
-    main()
+    key_pair_name = 'my-key-pair'
+    public_key_path = 'path/to/your/public/key.pub'  # Update this path
+    vpc_cidr_block = '10.0.0.0/16'
+    subnet_cidr_block = '10.0.1.0/24'
+    availability_zone = 'us-east-1a'
+    
+    # Create Key Pair
+    create_key_pair(key_pair_name, public_key_path)
+
+    # Create VPC
+    vpc_id = create_vpc(vpc_cidr_block)
+
+    # Create Subnet
+    subnet_id = create_subnet(vpc_id, subnet_cidr_block, availability_zone, public_ip=True)
+
+    # Create Security Group
+    security_group_id = create_security_group(vpc_id, "wordpress-sg", "Security group for WordPress instances")
+
+    # Create Internet Gateway
+    igw_id = create_internet_gateway(vpc_id)
+
+    # Create Route Table
+    route_table_id = create_route_table(vpc_id, igw_id, subnet_id)
+
+    # Create RDS Instance
+    db_identifier = 'wordpressdb'
+    db_snapshot_arn = 'arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot'  # Update with your snapshot ARN
+    db_subnet_group_name = 'wordpress-db-subnet-group'
+    vpc_security_group_ids = [security_group_id]
+    
+    create_rds_instance(db_identifier, db_snapshot_arn, db_subnet_group_name, vpc_security_group_ids)
+
+    # Create Target Group
+    target_group_name = 'wordpress-target-group'
+    target_group_arn = create_target_group(vpc_id, target_group_name)
+
+    # Create Load Balancer
+    lb_name = 'wordpress-load-balancer'
+    lb_arn = create_load_balancer([subnet_id], [security_group_id], lb_name)
+
+    # Create HTTPS Listener
+    certificate_arn = 'arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805'  # Update with your certificate ARN
+    create_https_listener(lb_arn, target_group_arn, certificate_arn)
+
+    # Create Launch Configuration (optional)
+    launch_config_name = 'wordpress-launch-configuration'
+    # Define other launch configuration details
+
+    # Create Auto Scaling Group
+    autoscaling_group_name = 'wordpress-auto-scaling-group'
+    create_autoscaling_group(launch_config_name, autoscaling_group_name, [subnet_id], target_group_arn)
+
+    print("All resources created successfully.")
