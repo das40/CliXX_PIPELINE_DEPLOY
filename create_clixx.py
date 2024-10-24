@@ -51,36 +51,32 @@ def create_subnet(vpc_id, cidr_block, availability_zone, public_ip=False):
 
 
 # Step 4: Create Security Group
-def create_security_group(vpc_id, sg_name, description, ingress_rules, egress_rules):
+def create_security_group(vpc_id, group_name, description):
+    ec2_client = boto3.client('ec2')
+
+    # Create the security group
     response = ec2_client.create_security_group(
-        GroupName=sg_name,
+        GroupName=group_name,
         Description=description,
         VpcId=vpc_id
     )
+    
     sg_id = response['GroupId']
     
-    # Add ingress rules
-    for rule in ingress_rules:
-        ec2_client.authorize_security_group_ingress(
-            GroupId=sg_id,
-            IpProtocol=rule['protocol'],
-            FromPort=rule['from_port'],
-            ToPort=rule['to_port'],
-            CidrIp=rule['cidr_block']
-        )
+    # Allow all outbound traffic (egress)
+    ec2_client.authorize_security_group_egress(
+        GroupId=sg_id,
+        IpPermissions=[
+            {
+                'IpProtocol': '-1',
+                'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+            }
+        ]
+    )
     
-    # Add egress rules
-    for rule in egress_rules:
-        ec2_client.authorize_security_group_egress(
-            GroupId=sg_id,
-            IpProtocol=rule['protocol'],
-            FromPort=rule['from_port'],
-            ToPort=rule['to_port'],
-            CidrIp=rule['cidr_block']
-        )
-    
-    print(f"Security Group {sg_name} created with ID: {sg_id}")
     return sg_id
+
+    
 
 # Step 5: Create an Internet Gateway and attach to VPC
 def create_internet_gateway(vpc_id):
