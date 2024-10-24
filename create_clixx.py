@@ -106,18 +106,24 @@ def create_route_table(vpc_id, igw_id, subnet_id):
     return rt_id
 
 # Step 7: Create an RDS Instance (Restored from Snapshot)
+from botocore.exceptions import ClientError
+
 def create_rds_instance(db_identifier, db_snapshot_arn, db_subnet_group_name, vpc_security_group_ids):
-    response = rds_client.restore_db_instance_from_db_snapshot(
-        DBInstanceIdentifier=db_identifier,
-        DBSnapshotIdentifier=db_snapshot_arn,
-        DBInstanceClass='db.t3.micro',
-        DBSubnetGroupName=db_subnet_group_name,
-        VpcSecurityGroupIds=vpc_security_group_ids,
-        PubliclyAccessible=False,
-        MultiAZ=False
-    )
-    print(f"RDS instance {db_identifier} restored from snapshot.")
-    return response
+    try:
+        response = rds_client.restore_db_instance_from_db_snapshot(
+            DBInstanceIdentifier=db_identifier,
+            DBSnapshotIdentifier=db_snapshot_arn,
+            DBInstanceClass='db.t3.micro',
+            DBSubnetGroupName=db_subnet_group_name,
+            VpcSecurityGroupIds=vpc_security_group_ids,
+            PubliclyAccessible=False,
+            MultiAZ=False
+        )
+        print(f"RDS instance {db_identifier} restored from snapshot.")
+        return response
+    except ClientError as e:
+        print(f"Error restoring RDS instance: {e.response['Error']['Message']}")
+
 
 # Step 8: Create a Target Group
 def create_target_group(vpc_id, target_group_name, protocol='HTTP', port=80):
