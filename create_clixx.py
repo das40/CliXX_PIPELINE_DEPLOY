@@ -251,7 +251,7 @@ if __name__ == "__main__":
     availability_zone = 'us-east-1a'
     
     # Create Key Pair
-    create_key_pair(key_pair_name, public_key_path)
+    #create_key_pair(key_pair_name, public_key_path)
 
     # Create VPC
     vpc_id = create_vpc(vpc_cidr_block)
