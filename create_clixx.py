@@ -30,15 +30,25 @@ def create_vpc(cidr_block):
 
 # Step 3: Create Subnets
 def create_subnet(vpc_id, cidr_block, availability_zone, public_ip=False):
+    ec2_client = boto3.client('ec2')
+    
     response = ec2_client.create_subnet(
         VpcId=vpc_id,
         CidrBlock=cidr_block,
-        AvailabilityZone=availability_zone,
-        MapPublicIpOnLaunch=public_ip
+        AvailabilityZone=availability_zone
     )
+    
     subnet_id = response['Subnet']['SubnetId']
-    print(f"Subnet {subnet_id} created in {availability_zone}")
+    
+    if public_ip:
+        # Enable public IP on launch for this subnet
+        ec2_client.modify_subnet_attribute(
+            SubnetId=subnet_id,
+            MapPublicIpOnLaunch={'Value': True}
+        )
+    
     return subnet_id
+
 
 # Step 4: Create Security Group
 def create_security_group(vpc_id, sg_name, description, ingress_rules, egress_rules):
