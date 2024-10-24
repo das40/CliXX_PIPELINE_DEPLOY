@@ -6,18 +6,6 @@ rds_client = boto3.client('rds')
 autoscaling_client = boto3.client('autoscaling')
 elb_client = boto3.client('elbv2')
 
-# Step 1: Create a Key Pair
-# def create_key_pair(key_name, public_key_path):
-#     with open(public_key_path, 'r') as key_file:
-#         public_key = key_file.read()
-    
-#     response = ec2_client.import_key_pair(
-#         KeyName=key_name,
-#         PublicKeyMaterial=public_key.encode('utf-8')
-#     )
-#     print(f"Key Pair {key_name} created.")
-#     return response
-
 # Step 2: Create a VPC
 def create_vpc(cidr_block):
     response = ec2_client.create_vpc(
