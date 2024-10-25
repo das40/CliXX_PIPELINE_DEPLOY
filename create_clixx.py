@@ -184,9 +184,7 @@ def create_autoscaling_group(launch_config_name, autoscaling_group_name, subnets
     return response
 
 # User Data Script
-user_data_script = """#!/bin/bash -x
-
-# Logging setup
+user_data_script = """# Logging setup
 exec > >(tee /var/log/userdata.log) 2>&1
 
 # Variables
@@ -213,7 +211,7 @@ echo "${FILE_SYSTEM_ID}.efs.${REGION}.amazonaws.com:/ ${MOUNT_POINT} nfs4 nfsver
 mount -a -t nfs4
 chmod -R 755 ${MOUNT_POINT}
 
-# Start and enable Apache and MariaDB services
+# Start and enable Apache
 sudo systemctl start httpd
 sudo systemctl enable httpd
 sudo systemctl start mariadb
@@ -221,48 +219,70 @@ sudo systemctl enable mariadb
 
 # Add ec2-user to Apache group and modify permissions for /var/www
 sudo usermod -a -G apache ec2-user
-sudo chown -R ec2-user:apache ${MOUNT_POINT}
-sudo chmod -R 775 ${MOUNT_POINT}
+sudo chown -R ec2-user:apache /var/www
+sudo chmod 2775 /var/www && find /var/www -type d -exec sudo chmod 2775 {} \;
+find /var/www -type f -exec sudo chmod 0664 {} \;
 
-# Download and configure WordPress
-cd ${MOUNT_POINT}
-wget https://wordpress.org/latest.tar.gz
-tar -xzf latest.tar.gz
-cp -r wordpress/* ${MOUNT_POINT}
-rm -rf wordpress latest.tar.gz
+# Clone your repository and set up WordPress configuration
+cd /var/www/html
+git clone https://github.com/stackitgit/CliXX_Retail_Repository.git
+cp -r CliXX_Retail_Repository/* /var/www/html
 
-# Create a wp-config.php file
-cat > ${MOUNT_POINT}/wp-config.php <<EOL
-define('DB_NAME', '${DB_NAME}');
-define('DB_USER', '${DB_USER}');
-define('DB_PASSWORD', '${DB_USER_PASSWORD}');
-define('DB_HOST', '${DB_HOST}');
-define('DB_CHARSET', 'utf8');
-define('DB_COLLATE', '');
-define('AUTH_KEY', 'put your unique phrase here');
-define('SECURE_AUTH_KEY', 'put your unique phrase here');
-define('LOGGED_IN_KEY', 'put your unique phrase here');
-define('NONCE_KEY', 'put your unique phrase here');
-define('AUTH_SALT', 'put your unique phrase here');
-define('SECURE_AUTH_SALT', 'put your unique phrase here');
-define('LOGGED_IN_SALT', 'put your unique phrase here');
-define('NONCE_SALT', 'put your unique phrase here');
-$table_prefix  = 'wp_';
-define('WP_DEBUG', false);
-if ( !defined('ABSPATH') ) {
-    define('ABSPATH', __DIR__ . '/');
-}
-require_once(ABSPATH . 'wp-settings.php');
-EOL
+# Setup wp-config.php
+if [ -f "wp-config-sample.php" ]; then
+    cp wp-config-sample.php wp-config.php
+else
+    echo "wp-config-sample.php does not exist!"
+    exit 1
+fi
 
-# Create the database and user
-mysql -u root -e "CREATE DATABASE ${DB_NAME};"
-mysql -u root -e "CREATE USER '${DB_USER}'@'%' IDENTIFIED BY '${DB_USER_PASSWORD}';"
-mysql -u root -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%';"
-mysql -u root -e "FLUSH PRIVILEGES;"
+# Replace placeholders in wp-config.php with actual values
+sed -i "s/database_name_here/${DB_NAME}/g" wp-config.php
+sed -i "s/username_here/${DB_USER}/g" wp-config.php
+sed -i "s/password_here/${DB_USER_PASSWORD}/g" wp-config.php
+sed -i "s/localhost/${DB_HOST}/g" wp-config.php
 
-# Restart Apache to apply changes
+# Update Apache configuration to allow WordPress permalinks
+sudo sed -i '151s/None/All/' /etc/httpd/conf/httpd.conf
+
+# Adjust file and directory ownership and permissions
+sudo chown -R apache /var/www
+sudo chgrp -R apache /var/www
+sudo chmod 2775 /var/www
+find /var/www -type d -exec sudo chmod 2775 {} \;
+find /var/www -type f -exec sudo chmod 0664 {} \;
+
+# Check if DNS is already in the wp_options table (matching your actual setup)
+output_variable=$(mysql -u ${DB_USER} -p${DB_USER_PASSWORD} -h ${DB_HOST} -D ${DB_NAME} -sse "select option_value from wp_options where option_value like '%${DNS}%';")
+
+if [[ "${output_variable}" == "${DNS}" ]]; then
+    echo "DNS Address is already in the table"
+else
+    echo "DNS Address is not in the table, updating..."
+    mysql -u ${DB_USER} -p${DB_USER_PASSWORD} -h ${DB_HOST} -D ${DB_NAME} -e "UPDATE wp_options SET option_value ='${DNS}' WHERE option_value LIKE '%${DNS}%';"
+fi
+
+# Restart and enable Apache
 sudo systemctl restart httpd
+
+# Update RDS with Load Balancer DNS
+UPDATE_SITEURL="UPDATE wp_options SET option_value='https://${LB_DNS}' WHERE option_name='siteurl';"
+UPDATE_HOME="UPDATE wp_options SET option_value='https://${LB_DNS}' WHERE option_name='home';"
+
+# Execute the update queries
+mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_USER_PASSWORD} -D ${DB_NAME} -e "${UPDATE_SITEURL}"
+mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_USER_PASSWORD} -D ${DB_NAME} -e "${UPDATE_HOME}"
+
+# Check if MySQL query was successful
+if (( $? == 0 )); then
+    echo "MySQL update successful"
+else
+    echo "MySQL update failed"
+    exit 1
+fi
+
+# Set TCP keepalive settings
+sudo /sbin/sysctl -w net.ipv4.tcp_keepalive_time=200 net.ipv4.tcp_keepalive_intvl=200 net.ipv4.tcp_keepalive_probes=5"
 """
 
 # Running the functions in sequence
