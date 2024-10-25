@@ -1,57 +1,54 @@
-#!/usr/bin/python
-
 import boto3
-import botocore
 from botocore.exceptions import ClientError
 
-# Create STS client
-sts_client = boto3.client('sts')
-
-try:
-    # Calling the assume_role function
-    assumed_role_object = sts_client.assume_role(
-        RoleArn='arn:aws:iam::619071313311:role/Engineer', 
-        RoleSessionName='mysession'
-    )
+# Function to assume a role in the target account
+def assume_role(role_arn, session_name):
+    sts_client = boto3.client('sts')
     
-    # Extract credentials
-    credentials = assumed_role_object['Credentials']
-    print("Assumed role successfully.")
-    
-    # Create EC2 client using the assumed role credentials
-    ec2 = boto3.client(
-        'ec2',
-        aws_access_key_id=credentials['AccessKeyId'],
-        aws_secret_access_key=credentials['SecretAccessKey'],
-        aws_session_token=credentials['SessionToken'],
-        region_name='us-east-1'  # Specify your region here
-    )
-    
-    # Fetch the default VPC (if needed)
     try:
-        default_vpc = ec2.describe_vpcs(Filters=[{'Name': 'isDefault', 'Values': ['true']}])
-        vpc_id = default_vpc['Vpcs'][0]['VpcId']
-        print(f"Using default VPC: {vpc_id}")
+        response = sts_client.assume_role(
+            RoleArn=role_arn,
+            RoleSessionName=session_name
+        )
+        credentials = response['Credentials']
+        
+        return {
+            'aws_access_key_id': credentials['AccessKeyId'],
+            'aws_secret_access_key': credentials['SecretAccessKey'],
+            'aws_session_token': credentials['SessionToken']
+        }
     except ClientError as e:
-        print("Error fetching default VPC:", e)
-        raise e
+        print(f"Error assuming role: {e}")
+        return None
 
-    # Check if the security group already exists
-    try:
-        response = ec2.describe_security_groups(GroupNames=['my-security-group'])
-        print("Security group already exists:", response['SecurityGroups'][0]['GroupId'])
-    except ClientError as e:
-        if 'InvalidGroup.NotFound' in str(e):
-            print("Security group not found, creating it now...")
-            # Try creating the security group in the default VPC
-            response = ec2.create_security_group(
-                Description='My security group',
-                GroupName='my-security-group',
-                VpcId=vpc_id  # Use the fetched VPC ID
-            )
-            print("Security group created successfully:", response['GroupId'])
-        else:
-            print("Error while checking or creating security group:", e)
+# Call assume_role to get credentials for the engineering development account
+role_arn = 'arn:aws:iam::619071313311:role/Engineer'
+session_name = 'MyCodeBuildSession'
 
-except ClientError as e:
-    print("Error assuming role or making AWS requests:", e)
+# Get the assumed role credentials
+assumed_role_credentials = assume_role(role_arn, session_name)
+
+if assumed_role_credentials:
+    # Use the assumed role's credentials to create boto3 clients in the target account
+    ec2_client = boto3.client('ec2', 
+                              aws_access_key_id=assumed_role_credentials['aws_access_key_id'],
+                              aws_secret_access_key=assumed_role_credentials['aws_secret_access_key'],
+                              aws_session_token=assumed_role_credentials['aws_session_token'])
+    
+    rds_client = boto3.client('rds', 
+                              aws_access_key_id=assumed_role_credentials['aws_access_key_id'],
+                              aws_secret_access_key=assumed_role_credentials['aws_secret_access_key'],
+                              aws_session_token=assumed_role_credentials['aws_session_token'])
+
+    elb_client = boto3.client('elbv2',
+                              aws_access_key_id=assumed_role_credentials['aws_access_key_id'],
+                              aws_secret_access_key=assumed_role_credentials['aws_secret_access_key'],
+                              aws_session_token=assumed_role_credentials['aws_session_token'])
+
+    autoscaling_client = boto3.client('autoscaling',
+                                      aws_access_key_id=assumed_role_credentials['aws_access_key_id'],
+                                      aws_secret_access_key=assumed_role_credentials['aws_secret_access_key'],
+                                      aws_session_token=assumed_role_credentials['aws_session_token'])
+else:
+    print("Failed to assume role. Exiting.")
+    exit(1)
