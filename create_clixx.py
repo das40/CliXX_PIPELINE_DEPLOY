@@ -370,7 +370,7 @@ route_table_id = create_route_table(vpc_id, igw_id, private_subnet_id)
 efs_id = create_efs('clixx-efs', vpc_id)
 
 # Creating RDS instance
-rds_instance_id = create_rds_instance('clixx-db-instance', 'arn:aws:rds:us-east-1:123456789012:snapshot:mydbsnapshot', 'clixx-db-subnet-group', [security_group_id])
+rds_instance_id = create_rds_instance('clixx-db-instance', 'arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot', 'clixx-db-subnet-group', [security_group_id])
 
 # Creating Launch Template
 launch_template_id = create_launch_template('clixx-launch-template', 't2.micro', security_group_id)
@@ -378,7 +378,7 @@ launch_template_id = create_launch_template('clixx-launch-template', 't2.micro',
 # Creating Load Balancer and related components
 target_group_arn = create_target_group(vpc_id, 'clixx-target-group')
 load_balancer_arn = create_load_balancer([private_subnet_id], [security_group_id], 'clixx-load-balancer')
-listener_arn = create_https_listener(load_balancer_arn, target_group_arn, 'arn:aws:acm:us-east-1:123456789012:certificate/my-certificate')
+listener_arn = create_https_listener(load_balancer_arn, target_group_arn, 'arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805')
 
 # Creating Auto Scaling Group
 create_autoscaling_group(launch_template_id, 'clixx-autoscaling-group', [private_subnet_id], target_group_arn)
