@@ -95,7 +95,7 @@ MOUNT_POINT = "/var/www/html"  # Terraform variable clixx_efs_mount_point
 
 # Route 53 and Load Balancer Configuration
 certificate_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
-hosted_zone_id = "Z032607324NJ585T59J7F"
+hosted_zone_id = "Z0881876FFUR3OKRNM20"
 DNS = "dev.clixx-dasola.com"  # Terraform variable clixx_dns_record
 LB_DNS = "clixx-dasola.com"  # Terraform variable clixx_lb_dns
 
