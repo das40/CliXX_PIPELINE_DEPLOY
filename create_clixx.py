@@ -65,27 +65,26 @@ def create_route_table(vpc_id, igw_id, subnet_id):
     print(f"Route table {rt_id} created and associated with subnet {subnet_id}")
     return rt_id
 
+# Create EFS with existing check
 def create_efs(file_system_name, vpc_id):
     try:
-        # Check if a file system with the same creation token already exists
         existing_filesystems = efs_client.describe_file_systems()
         for fs in existing_filesystems['FileSystems']:
-            if fs['EFS_ID'] == file_system_name:  # Assumes 'Name' is a tag, adjust if necessary
-                print(f"File system '{file_system_name}' already exists with ID: {fs['FileSystemId']}")
-                return fs['FileSystemId']
+            # Ensure you're checking against a correct identifier
+            if 'Name' in fs['Tags']:
+                if fs['Tags']['Name'] == file_system_name:
+                    print(f"File system '{file_system_name}' already exists with ID: {fs['FileSystemId']}")
+                    return fs['FileSystemId']
 
-        # Create a new file system
         response = efs_client.create_file_system(
             CreationToken=file_system_name,
             PerformanceMode='generalPurpose',
             Encrypted=True
         )
-
-        # Retrieve the File System ID from the response
         efs_id = response['FileSystemId']
         print(f"EFS created with File System ID: {efs_id}")
 
-        # Create mount targets for the EFS in the specified VPC
+        # Create mount targets for the EFS
         subnet_ids = get_private_subnet_ids(vpc_id)
         for subnet_id in subnet_ids:
             mount_response = efs_client.create_mount_target(FileSystemId=efs_id, SubnetId=subnet_id)
@@ -97,6 +96,7 @@ def create_efs(file_system_name, vpc_id):
         print(f"Error creating EFS: {e}")
         return None
 
+    
 
 
 def get_private_subnet_ids(vpc_id):
