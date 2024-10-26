@@ -6,6 +6,7 @@ session = boto3.Session(
     aws_secret_access_key=credentials['SecretAccessKey'],
     aws_session_token=credentials['SessionToken'],
     region_name=AWS_REGION
+)
 
 # Initialize the boto3 clients
 ec2_client = boto3.client('ec2')
