@@ -194,15 +194,24 @@ exec > >(tee /var/log/userdata.log) 2>&1
 echo "Connecting to DB: ${DB_HOST}"
 
 # Database Configuration
-DB_USER="${DB_USER}"
-DB_USER_PASSWORD="${DB_USER_PASSWORD}"
-DB_HOST="${DB_HOST}"
-DB_NAME="${DB_NAME}"
-DNS="${DNS}"
+# DB_USER="${DB_USER}"
+# DB_USER_PASSWORD="${DB_USER_PASSWORD}"
+# DB_HOST="${DB_HOST}"
+# DB_NAME="${DB_NAME}"
+# DNS="${DNS}"
 EFS_ID="${efs_id}"  # Passed from Terraform using $$ for variable interpolation
+# LB_DNS="${LB_DNS}"
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 MOUNT_POINT="/var/www/html"
-LB_DNS="${LB_DNS}"
+
+export DB_USER="wordpressuser"
+export DB_NAME="wordpressdb"
+export DB_USER_PASSWORD="W3lcome123"
+export DB_HOST=""  # Set this dynamically later
+export SNAPSHOT_ARN="arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"
+export DNS="clixx-dasola.com"
+export LB_DNS="dev.clixx-dasola.com"
+
 
 # Update packages and install dependencies
 sudo yum update -y
