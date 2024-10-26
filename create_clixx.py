@@ -191,10 +191,43 @@ user_data_script = """#!/bin/bash -x
 # Basic logging
 exec > >(tee /var/log/userdata.log) 2>&1
 
-# Mount EFS
-MOUNT_POINT="/var/www/html"
-EFS_ID="${EFS_ID}"  # Passed from Terraform
+echo "Connecting to DB: ${DB_HOST}"
+
+# Database Configuration
+DB_USER="${DB_USER}"
+DB_USER_PASSWORD="${DB_USER_PASSWORD}"
+DB_HOST="${DB_HOST}"
+DB_NAME="${DB_NAME}"
+DNS="${DNS}"
+EFS_ID="${efs_id}"  # Passed from Terraform using $$ for variable interpolation
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+MOUNT_POINT="/var/www/html"
+LB_DNS="${LB_DNS}"
+
+# Update packages and install dependencies
+sudo yum update -y
+sudo yum install -y git
+sudo amazon-linux-extras install -y lamp-mariadb10.2-php7.2 php7.2
+sudo yum install -y httpd mariadb-server nfs-utils
+
+# Start and enable Apache
+sudo systemctl start httpd
+sudo systemctl enable httpd
+
+# Configure permissions
+sudo usermod -a -G apache ec2-user
+sudo chown -R ec2-user:apache /var/www
+sudo chmod 2775 /var/www
+find /var/www -type d -exec sudo chmod 2775 {} \;
+find /var/www -type f -exec sudo chmod 0664 {} \;
+
+# Mount EFS
+AVAILABILITY_ZONE=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+# Extract region by removing the last character (the zone letter)
+#REGION=$AVAILABILITY_ZONE:0:-1
+REGION=$(echo "$AVAILABILITY_ZONE" | sed 's/[a-z]$//')
+
 
 # Create mount point directory if it doesn't exist
 sudo mkdir -p "$MOUNT_POINT"
@@ -204,7 +237,7 @@ sudo chown ec2-user:ec2-user "$MOUNT_POINT"
 echo "$EFS_ID.efs.$REGION.amazonaws.com:/ $MOUNT_POINT nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,_netdev 0 0" | sudo tee -a /etc/fstab
 
 # Sleep to allow network interfaces to initialize
-sleep 10
+sleep 120
 
 # Mount the EFS
 sudo mount -a
