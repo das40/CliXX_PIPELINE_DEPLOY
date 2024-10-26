@@ -70,7 +70,7 @@ def create_efs(file_system_name, vpc_id):
         # Check if a file system with the same creation token already exists
         existing_filesystems = efs_client.describe_file_systems()
         for fs in existing_filesystems['FileSystems']:
-            if fs['Name'] == file_system_name:  # Assumes 'Name' is a tag, adjust if necessary
+            if fs['EFS_ID'] == file_system_name:  # Assumes 'Name' is a tag, adjust if necessary
                 print(f"File system '{file_system_name}' already exists with ID: {fs['FileSystemId']}")
                 return fs['FileSystemId']
 
