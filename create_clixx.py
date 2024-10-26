@@ -1,28 +1,52 @@
 import boto3
 from botocore.exceptions import ClientError
 
+# Function to assume a role
+def assume_role(role_arn, session_name):
+    sts_client = boto3.client('sts')
+    
+    try:
+        response = sts_client.assume_role(
+            RoleArn=role_arn,
+            RoleSessionName=session_name
+        )
+        credentials = response['Credentials']
+        return {
+            'aws_access_key_id': credentials['AccessKeyId'],
+            'aws_secret_access_key': credentials['SecretAccessKey'],
+            'aws_session_token': credentials['SessionToken']
+        }
+    except ClientError as e:
+        print(f"Error assuming role: {e}")
+        return None
 
+# Specify role ARN and session name
+role_arn = 'arn:aws:iam::619071313311:role/Engineer'
+session_name = 'MyCodeBuildSession'
 
-# Initialize the boto3 clients
-ec2_client = boto3.client('ec2')
-rds_client = boto3.client('rds')
-autoscaling_client = boto3.client('autoscaling')
-elb_client = boto3.client('elbv2')
-efs_client = boto3.client('efs')
+# Assume role and store credentials
+assumed_role_credentials = assume_role(role_arn, session_name)
 
-AWS_REGION = 'us-east-1'
-sts_client = boto3.client('sts')
+if assumed_role_credentials:
+    # Create session with the assumed role credentials
+    session = boto3.Session(
+        aws_access_key_id=assumed_role_credentials['aws_access_key_id'],
+        aws_secret_access_key=assumed_role_credentials['aws_secret_access_key'],
+        aws_session_token=assumed_role_credentials['aws_session_token'],
+        region_name='us-east-1'  # Use your desired region
+    )
 
-# Assuming a role
-assumed_role_object = sts_client.assume_role(RoleArn='arn:aws:iam::619071313311:role/Engineer', RoleSessionName='mysession')
-credentials = assumed_role_object['Credentials']
+    # Initialize the clients
+    ec2_client = session.client('ec2')
+    rds_client = session.client('rds')
+    elb_client = session.client('elbv2')
+    autoscaling_client = session.client('autoscaling')
+    efs_client = session.client('efs')
 
-session = boto3.Session(
-    aws_access_key_id=credentials['AccessKeyId'],
-    aws_secret_access_key=credentials['SecretAccessKey'],
-    aws_session_token=credentials['SessionToken'],
-    region_name=AWS_REGION
-)
+else:
+    print("Failed to assume role. Exiting.")
+    exit(1)
+
 
 # Step 1: Create a VPC
 def create_vpc(cidr_block):
