@@ -1,22 +1,22 @@
-#!/usr/bin/python
+# #!/usr/bin/python
 
-import boto3,botocore
+# import boto3,botocore
 
-sts_client=boto3.client('sts')
+# sts_client=boto3.client('sts')
 
-#Calling the assume_role function
-assumed_role_object=sts_client.assume_role(RoleArn='arn:aws:iam::619071313311:role/Engineer', RoleSessionName='mysession')
+# #Calling the assume_role function
+# assumed_role_object=sts_client.assume_role(RoleArn='arn:aws:iam::619071313311:role/Engineer', RoleSessionName='mysession')
 
-credentials=assumed_role_object['Credentials']
+# credentials=assumed_role_object['Credentials']
 
-print(credentials)
+# print(credentials)
 
 
 
-ec2=boto3.client('ec2',aws_access_key_id=credentials['AccessKeyId'],aws_secret_access_key=credentials['SecretAccessKey'],aws_session_token=credentials['SessionToken'])
+# ec2=boto3.client('ec2',aws_access_key_id=credentials['AccessKeyId'],aws_secret_access_key=credentials['SecretAccessKey'],aws_session_token=credentials['SessionToken'])
 
-response = ec2.delete_security_group(
-    #GroupId='string',
-    GroupName=''
-    )
-print(response)
+# response = ec2.delete_security_group(
+#     #GroupId='string',
+#     GroupName=''
+#     )
+# print(response)
