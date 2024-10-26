@@ -1,6 +1,12 @@
 import boto3
 from botocore.exceptions import ClientError
 
+session = boto3.Session(
+    aws_access_key_id=credentials['AccessKeyId'],
+    aws_secret_access_key=credentials['SecretAccessKey'],
+    aws_session_token=credentials['SessionToken'],
+    region_name=AWS_REGION
+
 # Initialize the boto3 clients
 ec2_client = boto3.client('ec2')
 rds_client = boto3.client('rds')
@@ -56,7 +62,7 @@ def create_route_table(vpc_id, igw_id, subnet_id):
     print(f"Route table {rt_id} created and associated with subnet {subnet_id}")
     return rt_id
 
-#def create_efs(file_system_name, vpc_id):
+def create_efs(file_system_name, vpc_id):
     response = efs_client.create_file_system(
         CreationToken=file_system_name,
         PerformanceMode='generalPurpose',
@@ -64,16 +70,17 @@ def create_route_table(vpc_id, igw_id, subnet_id):
     )
     
     # Retrieve the File System ID from the response
-    EFS_ID = response['FileSystemId']  # Using uppercase as per your requirement
-    print(f"EFS created with File System ID: {EFS_ID}")
+    efs_id = response['FileSystemId']
+    print(f"EFS created with File System ID: {efs_id}")
 
     # Create mount targets for the EFS in the specified VPC
-    subnet_ids = get_private_subnet_ids(vpc_id)  # Function to retrieve private subnets
+    subnet_ids = get_private_subnet_ids(vpc_id)
     for subnet_id in subnet_ids:
-        mount_response = efs_client.create_mount_target(FileSystemId=EFS_ID, SubnetId=subnet_id)
+        mount_response = efs_client.create_mount_target(FileSystemId=efs_id, SubnetId=subnet_id)
         print(f"Mount target created for EFS in subnet {subnet_id}: {mount_response['MountTargetId']}")
     
-    return EFS_ID
+    return efs_id
+
 
 
 def get_private_subnet_ids(vpc_id):
