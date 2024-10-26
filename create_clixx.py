@@ -1,12 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
 
-session = boto3.Session(
-    aws_access_key_id=credentials['AccessKeyId'],
-    aws_secret_access_key=credentials['SecretAccessKey'],
-    aws_session_token=credentials['SessionToken'],
-    region_name=AWS_REGION
-)
+
 
 # Initialize the boto3 clients
 ec2_client = boto3.client('ec2')
@@ -21,6 +16,13 @@ sts_client = boto3.client('sts')
 # Assuming a role
 assumed_role_object = sts_client.assume_role(RoleArn='arn:aws:iam::619071313311:role/Engineer', RoleSessionName='mysession')
 credentials = assumed_role_object['Credentials']
+
+session = boto3.Session(
+    aws_access_key_id=credentials['AccessKeyId'],
+    aws_secret_access_key=credentials['SecretAccessKey'],
+    aws_session_token=credentials['SessionToken'],
+    region_name=AWS_REGION
+)
 
 # Step 1: Create a VPC
 def create_vpc(cidr_block):
