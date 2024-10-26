@@ -66,23 +66,36 @@ def create_route_table(vpc_id, igw_id, subnet_id):
     return rt_id
 
 def create_efs(file_system_name, vpc_id):
-    response = efs_client.create_file_system(
-        CreationToken=file_system_name,
-        PerformanceMode='generalPurpose',
-        Encrypted=True
-    )
-    
-    # Retrieve the File System ID from the response
-    efs_id = response['FileSystemId']
-    print(f"EFS created with File System ID: {efs_id}")
+    try:
+        # Check if a file system with the same creation token already exists
+        existing_filesystems = efs_client.describe_file_systems()
+        for fs in existing_filesystems['FileSystems']:
+            if fs['Name'] == file_system_name:  # Assumes 'Name' is a tag, adjust if necessary
+                print(f"File system '{file_system_name}' already exists with ID: {fs['FileSystemId']}")
+                return fs['FileSystemId']
 
-    # Create mount targets for the EFS in the specified VPC
-    subnet_ids = get_private_subnet_ids(vpc_id)
-    for subnet_id in subnet_ids:
-        mount_response = efs_client.create_mount_target(FileSystemId=efs_id, SubnetId=subnet_id)
-        print(f"Mount target created for EFS in subnet {subnet_id}: {mount_response['MountTargetId']}")
-    
-    return efs_id
+        # Create a new file system
+        response = efs_client.create_file_system(
+            CreationToken=file_system_name,
+            PerformanceMode='generalPurpose',
+            Encrypted=True
+        )
+
+        # Retrieve the File System ID from the response
+        efs_id = response['FileSystemId']
+        print(f"EFS created with File System ID: {efs_id}")
+
+        # Create mount targets for the EFS in the specified VPC
+        subnet_ids = get_private_subnet_ids(vpc_id)
+        for subnet_id in subnet_ids:
+            mount_response = efs_client.create_mount_target(FileSystemId=efs_id, SubnetId=subnet_id)
+            print(f"Mount target created for EFS in subnet {subnet_id}: {mount_response['MountTargetId']}")
+
+        return efs_id
+
+    except ClientError as e:
+        print(f"Error creating EFS: {e}")
+        return None
 
 
 
