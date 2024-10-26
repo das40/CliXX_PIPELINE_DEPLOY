@@ -6,48 +6,48 @@ phases:
       - pip install boto3
   pre_build:
     commands:
-      - echo "Initiating NewApp deployment"
-      - echo "additional setup commands"
+      - echo "Initiating ClixxApp deployment"
+      - echo "Additional setup commands as needed"
   build:
     on-failure: ABORT
     commands:
-      - echo build initiation `date`
-      - echo "Setting up NewApp Security Group for components"
+      - echo Build initiation `date`
+      - echo "Setting up ClixxApp Security Group and configuring components"
       - |
-          deployment_flag='deploy_newapp'  # Define dynamically as needed
+          deployment_flag='assume_role.py'  # Define dynamically as needed
 
-          if [[ $deployment_flag == 'restore_db' ]]; then
-            echo "Restoring database instance from snapshot..."
-
-            python restore_database_snapshot.py
-          elif [[ $deployment_flag == 'deploy_env' ]]; then
-            echo "Deploying NewApp environment..."
-            python deploy_newapp_env.py
+          if [[ $deployment_flag == 'create_clixx.py' ]]; then
+            echo "Restoring ClixxApp database instance from snapshot..."
+            python restore_clixxapp_db_snapshot.py
+            
+          elif [[ $deployment_flag == 'destroy_Clixx.py' ]]; then
+            echo "Deploying ClixxApp environment..."
+            python deploy_clixxapp_env.py
 
           elif [[ $deployment_flag == 'configure_fs' ]]; then
-            echo "Configuring NewApp on FS..."
-            python configure_newapp_fs.py
+            echo "Configuring ClixxApp on File System (FS)..."
+            python configure_clixxapp_fs.py
 
           elif [[ $deployment_flag == 'deploy_custom' ]]; then
-            echo "Deploying custom NewApp configuration..."
-            python deploy_newapp_custom_vpc.py
+            echo "Deploying custom ClixxApp configuration on VPC..."
+            python deploy_clixxapp_custom_vpc.py
 
-          elif [[ $deployment_flag == 'delete_env' ]]; then
-            echo "Removing NewApp environment..."
-            python delete_newapp_env.py
+          elif [[ $deployment_flag == 'destroy_Clixx.py' ]]; then
+            echo "Removing ClixxApp environment..."
+            python delete_clixxapp_env.py
 
           elif [[ $deployment_flag == 'delete_custom' ]]; then
-            echo "Deleting custom NewApp configuration..."
-            python delete_newapp_custom_vpc.py
+            echo "Deleting custom ClixxApp configuration on VPC..."
+            python delete_clixxapp_custom_vpc.py
 
           elif [[ $deployment_flag == 'assume_role' ]]; then
-            echo "Initiating role assumption..."
-            python assume_new_role.py
-            
+            echo "Initiating role assumption for ClixxApp operations..."
+            python assume_clixx_role.py
+
           else
-            echo "Invalid option. Please reset the flag."
+            echo "Invalid option. Please reset the deployment_flag."
           fi
 
   post_build:
     commands:
-      - echo Build completion `date`
+      - echo Build completed successfully `date`
