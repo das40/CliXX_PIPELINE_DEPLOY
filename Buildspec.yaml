@@ -1,31 +1,3 @@
-# version: 0.2
-# phases:
-#   install:
-#     commands:
-#       - pip install yq
-#       - pip install boto3
-#   pre_build:
-#     commands:
-#       - echo "Starting CliXX deployment"
-#       - echo "more commands"
-#   build:
-#     on-failure: ABORT
-#     commands:
-#       - echo starting build on `date`
-#       - echo "Creating CliXX Security Group for apps and database"
-#       - |
-#           flag="create"
-#           if [[ $flag == 'create' ]]
-#           then
-#               python create_clixx.py
-#           elif [[ $flag == 'destroy' ]]
-#           then
-#               python destroy_CliXX.py
-#           fi
-#   post_build:
-#     commands:
-#       - echo Build completed on `date`
-
 version: 0.2
 phases:
   install:
@@ -34,21 +6,48 @@ phases:
       - pip install boto3
   pre_build:
     commands:
-      - echo "Starting CliXX deployment"
-      - echo "more commands"
+      - echo "Initiating NewApp deployment"
+      - echo "additional setup commands"
   build:
     on-failure: ABORT
     commands:
-      - echo starting build on `date`
-      - echo "Creating CliXX Security Group for apps and database"
+      - echo build initiation `date`
+      - echo "Setting up NewApp Security Group for components"
       - |
-          flag="create"  # Change this as needed
-          if [[ $flag == 'create' ]]; then
-              python create_clixx.py
-          elif [[ $flag == 'destroy' ]]; then
-              python destroy_CliXX.py
+          deployment_flag='deploy_newapp'  # Define dynamically as needed
+
+          if [[ $deployment_flag == 'restore_db' ]]; then
+            echo "Restoring database instance from snapshot..."
+
+            python restore_database_snapshot.py
+          elif [[ $deployment_flag == 'deploy_env' ]]; then
+            echo "Deploying NewApp environment..."
+            python deploy_newapp_env.py
+
+          elif [[ $deployment_flag == 'configure_fs' ]]; then
+            echo "Configuring NewApp on FS..."
+            python configure_newapp_fs.py
+
+          elif [[ $deployment_flag == 'deploy_custom' ]]; then
+            echo "Deploying custom NewApp configuration..."
+            python deploy_newapp_custom_vpc.py
+
+          elif [[ $deployment_flag == 'delete_env' ]]; then
+            echo "Removing NewApp environment..."
+            python delete_newapp_env.py
+
+          elif [[ $deployment_flag == 'delete_custom' ]]; then
+            echo "Deleting custom NewApp configuration..."
+            python delete_newapp_custom_vpc.py
+
+          elif [[ $deployment_flag == 'assume_role' ]]; then
+            echo "Initiating role assumption..."
+            python assume_new_role.py
+            
+          else
+            echo "Invalid option. Please reset the flag."
           fi
+
   post_build:
     commands:
-      - echo Build completed on `date`
-
+      - echo Build completion `date`
