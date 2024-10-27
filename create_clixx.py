@@ -607,7 +607,7 @@ sudo systemctl restart httpd
 
 # Log completion
 echo "WordPress installation and configuration completed."
-""""
+"""
 
 # Encode the user data to Base64
 clixx_user_data_base64 = base64.b64encode(user_data_script.encode('utf-8')).decode('utf-8')
