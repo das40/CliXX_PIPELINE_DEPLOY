@@ -54,11 +54,11 @@ clixx_priv_subnet_1_block = "10.10.3.0/24"
 clixx_priv_subnet_2_block = "10.10.4.0/24"
 clixx_db_identifier = "ClixxAppDB"
 # clixx_db_snapshot_ref = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"
-# clixx_db_class = "db.m6gd.large"
+clixx_db_class = "db.m6gd.large"
 # clixx_db_admin_user = "clixxadmin"
 # clixx_db_secret_key = "ClixxPass123"
 # clixx_ami_id = "ami-0a7c251754ac5da7f5"
-# clixx_instance_size = "t2.medium"
+clixx_instance_size = "t2.medium"
 # clixx_key_name = "clixx_devops_kp"
 # clixx_cert_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
 # clixx_host_zone_id = "Z032607324NJ585T59J7F"
@@ -71,12 +71,12 @@ aws_region = "us-east-1"  # Terraform variable AWS_REGION
 
 # Key Pair paths
 clixx_key_name = "clixx_devops_kp"  # AWS key pair name used on EC2
-clixx_key_path_private = "clixx_key"  # Path from Terraform variable PATH_TO_PRIVATE_KEY
-clixx_key_path_public = "/Users/oyeioladasolajoshua/desktop/apps/TERRAFORM/STACK_EC2-TF/clixx_key.pub"  # PATH_TO_PUBLIC_KEY
+#clixx_key_path_private = "clixx_key"  # Path from Terraform variable PATH_TO_PRIVATE_KEY
+#clixx_key_path_public = "/Users/oyeioladasolajoshua/desktop/apps/TERRAFORM/STACK_EC2-TF/clixx_key.pub"  # PATH_TO_PUBLIC_KEY
 
 ## EC2 and Load Balancer Configuration
 instance_type = "t2.micro"  # Terraform variable clixx_instance_size
-ami_id = "ami-08f3d892de259504d"  # Terraform variable clixx_ami_id
+ami_id = "ami-0a7c251754ac5da7f5"  # Terraform variable clixx_ami_id
 
 # RDS Configuration
 DB_IDENTIFIER = "ClixxAppDB"  # RDS instance name
