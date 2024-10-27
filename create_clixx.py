@@ -60,9 +60,9 @@ clixx_db_class = "db.m6gd.large"
 # clixx_ami_id = "ami-0a7c251754ac5da7f5"
 clixx_instance_size = "t2.medium"
 # clixx_key_name = "clixx_devops_kp"
-# clixx_cert_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
-# clixx_host_zone_id = "Z032607324NJ585T59J7F"
-# clixx_dns_record = "dev.clixx-dasola.com"
+clixx_cert_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
+ clixx_host_zone_id = "Z032607324NJ585T59J7F"
+ clixx_dns_record = "dev.clixx-dasola.com"
 # aws_region = "us-east-1"
 
 
@@ -80,8 +80,8 @@ ami_id = "ami-0a7c251754ac5da7f5"  # Terraform variable clixx_ami_id
 
 # RDS Configuration
 DB_IDENTIFIER = "ClixxAppDB"  # RDS instance name
-snapshot_arn = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"  # Terraform variable clixx_db_snapshot_ref
-DB_CLASS = "db.m6gd.large"
+clixx_db_snapshot_ref = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"  # Terraform variable clixx_db_snapshot_ref
+#DB_CLASS = "db.m6gd.large"
 DB_USER = "wordpressuser"  # Terraform variable clixx_db_admin_user
 DB_NAME = "wordpressdb"  # Terraform variable clixx_db_name
 DB_USER_PASSWORD = "W3lcome123"  # Terraform variable clixx_db_secret_key
@@ -94,8 +94,8 @@ efs_encrypted = True  # Terraform variable clixx_efs_encrypted
 MOUNT_POINT = "/var/www/html"  # Terraform variable clixx_efs_mount_point
 
 # Route 53 and Load Balancer Configuration
-certificate_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
-hosted_zone_id = "Z0881876FFUR3OKRNM20"
+#certificate_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
+#hosted_zone_id = "Z0881876FFUR3OKRNM20"
 DNS = "dev.clixx-dasola.com"  # Terraform variable clixx_dns_record
 LB_DNS = "clixx-dasola.com"  # Terraform variable clixx_lb_dns
 
