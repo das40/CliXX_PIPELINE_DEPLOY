@@ -61,8 +61,8 @@ clixx_db_class = "db.m6gd.large"
 clixx_instance_size = "t2.medium"
 # clixx_key_name = "clixx_devops_kp"
 clixx_cert_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
- clixx_host_zone_id = "Z032607324NJ585T59J7F"
- clixx_dns_record = "dev.clixx-dasola.com"
+clixx_host_zone_id = "Z032607324NJ585T59J7F"
+clixx_dns_record = "dev.clixx-dasola.com"
 # aws_region = "us-east-1"
 
 
