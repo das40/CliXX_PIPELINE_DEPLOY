@@ -47,12 +47,12 @@ autoscaling_client = boto3.client('autoscaling', region_name="us-east-1",
 
 ###########################################################################
 # Variables
-# clixx_vpc_cidr_block = "10.10.0.0/16"
-# clixx_pub_subnet_1_block = "10.10.1.0/24"
-# clixx_pub_subnet_2_block = "10.10.2.0/24"
-# clixx_priv_subnet_1_block = "10.10.3.0/24"
-# clixx_priv_subnet_2_block = "10.10.4.0/24"
-# clixx_db_identifier = "ClixxAppDB"
+clixx_vpc_cidr_block = "10.10.0.0/16"
+clixx_pub_subnet_1_block = "10.10.1.0/24"
+clixx_pub_subnet_2_block = "10.10.2.0/24"
+clixx_priv_subnet_1_block = "10.10.3.0/24"
+clixx_priv_subnet_2_block = "10.10.4.0/24"
+clixx_db_identifier = "ClixxAppDB"
 # clixx_db_snapshot_ref = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"
 # clixx_db_class = "db.m6gd.large"
 # clixx_db_admin_user = "clixxadmin"
