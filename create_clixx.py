@@ -4,7 +4,7 @@ import boto3, botocore, base64, time
 # Assume Role to interact with AWS resources
 sts_client = boto3.client('sts')
 assumed_role_object = sts_client.assume_role(
-    RoleArn='arn:aws:iam::043309319757:role/Engineer',
+    RoleArn='arn:aws:iam::619071313311:role/Engineer',
     RoleSessionName='mysession'
 )
 credentials = assumed_role_object['Credentials']
