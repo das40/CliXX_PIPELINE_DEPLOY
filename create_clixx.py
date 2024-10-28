@@ -673,7 +673,7 @@ else:
             #'SecurityGroupIds': [public_sg.id],  
             'UserData': user_data_base64,  
             'IamInstanceProfile': {
-                'Name': 'EFS_operations'  
+                'Name': 'EC2-Admin'  
             },
             'NetworkInterfaces': [{
                 'AssociatePublicIpAddress': True,
