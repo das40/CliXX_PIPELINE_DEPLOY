@@ -573,7 +573,7 @@ CLiXX_GIT_REPO_URL="https://github.com/stackitgit/CliXX_Retail_Repository.git"
 WordPress_DB_NAME="wordpressdb"
 WordPress_DB_USER="wordpressuser"
 WordPress_DB_PASS="W3lcome123"
-WordPress_DB_HOST="wordpressdbclixx.cj0yi4ywm61r.us-east-1.rds.amazonaws.com"
+WordPress_DB_HOST="wordpressdbclixx.cdk4eccemey1.us-east-1.rds.amazonaws.com"
 RECORD_NAME="{record_name}"
 WP_CONFIG_PATH="/var/www/html/wp-config.php"
 
