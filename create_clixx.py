@@ -52,18 +52,16 @@ public_subnet_cidr_block_1 = "10.0.1.0/24"
 public_subnet_cidr_block_2 = "10.0.2.0/24"
 private_subnet_cidr_block_1 = "10.0.3.0/24"
 private_subnet_cidr_block_2 = "10.0.4.0/24"
-#extra_subnet_cidr_block_1 = "10.0.5.0/24"
-#extra_subnet_cidr_block_2 = "10.0.6.0/24"
 db_instance_identifier = "Wordpressdbclixx"
 db_snapshot_identifier = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"
-db_instance_class ="db.m6gd.large"
+db_instance_class = "db.m6gd.large"
 db_username = "wordpressuser"
 db_password = "W3lcome123"
 ami_id = "ami-00f251754ac5da7f0"
 instance_type = "t2.micro"
 key_pair_name = "stack_devops_kp"
 certificate_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
-hosted_zone_id = "Z022607324NJ585R59I5F"
+hosted_zone_id = "Z032607324NJ585T59J7F"
 record_name = "dev.clixx-dasola.com"
 aws_region = "us-east-1"
 
@@ -245,7 +243,7 @@ for subnet_group in response['DBSubnetGroups']:
         print(f"DB Subnet Group '{DBSubnetGroupName}' already exists. Proceeding with the existing one.")
         break
 
-Create DB Subnet Group if it does not exist
+# Create DB Subnet Group if it does not exist
 if not db_subnet_group_exists:
     response = rds_client.create_db_subnet_group(
         DBSubnetGroupName=DBSubnetGroupName,
@@ -255,32 +253,6 @@ if not db_subnet_group_exists:
     )
     DBSubnetGroupName = response['DBSubnetGroup']['DBSubnetGroupName']
     print(f"DB Subnet Group '{DBSubnetGroupName}' created successfully.")
-#Define the DB subnet group name
-#DBSubnetGroupName = 'TESTSTACKDBSUBNETGROUP'
-
-# Check if the DB Subnet Group exists
-# try:
-#     response = rds_client.describe_db_subnet_groups(DBSubnetGroupName=DBSubnetGroupName)
-#     print(f"DB Subnet Group '{DBSubnetGroupName}' already exists. Proceeding with the existing one.")
-# except botocore.exceptions.ClientError as e:
-#     # If the subnet group doesn't exist, a ClientError will be raised
-#     if e.response['Error']['Code'] == 'DBSubnetGroupNotFoundFault':
-#         # Create the DB Subnet Group
-#         try:
-#             response = rds_client.create_db_subnet_group(
-#                 DBSubnetGroupName=DBSubnetGroupName,
-#                 SubnetIds=[private_subnet_1_id, private_subnet_2_id],
-#                 DBSubnetGroupDescription='My stack DB subnet group',
-#                 Tags=[{'Key': 'Name', 'Value': DBSubnetGroupName}]
-#             )
-#             print(f"DB Subnet Group '{DBSubnetGroupName}' created successfully.")
-#         except botocore.exceptions.ClientError as create_error:
-#             print(f"Error creating DB Subnet Group: {create_error}")
-#             exit(1)
-#     else:
-#         # If it's a different error, raise it
-#         raise e
-
 
 # List all DB instances and check if the desired instance exists
 # Check if the DB instance already exists
