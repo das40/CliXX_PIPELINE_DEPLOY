@@ -138,8 +138,8 @@ else:
 
 ################## Delete Route 53 record for the load balancer
 # Specify your Hosted Zone ID and the record name
-hosted_zone_id = 'Z022607324NJ585R59I5F'
-record_name = 'test.clixx-wdella.com'
+hosted_zone_id = 'Z0881876FFUR3OKRNM20'
+record_name = 'dev.clixx-dasola.com'
 # --- Route 53 Record Deletion ---
 
 # Check if the Route 53 record set already exists
