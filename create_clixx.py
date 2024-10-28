@@ -477,7 +477,7 @@ efs_name="CLiXX-EFS"
 clixx_file_system_id="{clixx_file_system_id}"
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 MOUNT_POINT="/var/www/html"
-RECORD_NAME="${{record_name}}"  # Define RECORD_NAME here
+RECORD_NAME="{clixx_record_name}"  # Define RECORD_NAME here
 
 # Update packages and install dependencies
 sudo yum update -y
