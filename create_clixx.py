@@ -540,10 +540,10 @@ sudo sed -i "81i if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HT
 # Set WordPress options using RECORD_NAME
 if [ -n "$RECORD_NAME" ]; then
     mysql -u $DB_USER -p$DB_USER_PASSWORD -h $DB_HOST -D $DB_NAME -e "
-        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='home';
-        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='siteurl';
-        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='ping_sites';
-        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='open_shop_header_retina_logo';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}}' WHERE option_name='home';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}}' WHERE option_name='siteurl';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}}' WHERE option_name='ping_sites';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}}' WHERE option_name='open_shop_header_retina_logo';
     "
     echo "WordPress options updated with RECORD_NAME: $RECORD_NAME"
 else
@@ -563,12 +563,12 @@ find /var/www -type f -exec sudo chmod 0664 {{}} \;
 # Restart and enable Apache
 sudo systemctl restart httpd
 
-# WordPress Installation on EFS
-cd "$MOUNT_POINT"
-sudo wget https://wordpress.org/latest.tar.gz
-sudo tar -xzf latest.tar.gz
-sudo mv wordpress/* "$MOUNT_POINT"
-sudo rm -rf wordpress latest.tar.gz
+# # WordPress Installation on EFS
+# cd "$MOUNT_POINT"
+# sudo wget https://wordpress.org/latest.tar.gz
+# sudo tar -xzf latest.tar.gz
+# sudo mv wordpress/* "$MOUNT_POINT"
+# sudo rm -rf wordpress latest.tar.gz
 
 # Set up WordPress configuration
 sudo sed -i "s/database_name_here/$DB_NAME/; s/username_here/$DB_USER/; s/password_here/$DB_USER_PASSWORD/; s/localhost/$DB_HOST/" wp-config.php
