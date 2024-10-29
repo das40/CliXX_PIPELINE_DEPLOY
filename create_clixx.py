@@ -575,7 +575,6 @@ sudo mv wordpress/* "$MOUNT_POINT"
 sudo rm -rf wordpress latest.tar.gz
 
 # Set up WordPress configuration
-sudo cp wp-config-sample.php wp-config.php
 sudo sed -i "s/database_name_here/$DB_NAME/; s/username_here/$DB_USER/; s/password_here/$DB_USER_PASSWORD/; s/localhost/$DB_HOST/" wp-config.php
 
 # Adjust permissions for WordPress
