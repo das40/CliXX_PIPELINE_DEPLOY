@@ -471,7 +471,7 @@ exec > >(tee /var/log/userdata.log) 2>&1
 # Set variables
 DB_USER="wordpressuser"
 DB_USER_PASSWORD="W3lcome123"
-DB_HOST="your-db-host-url"  # Update with actual DB host
+DB_HOST="rds-instance-alpha.cdk4eccemey1.us-east-1.rds.amazonaws.com"  # Update with actual DB host
 DB_NAME="wordpressdb"
 efs_name="CLiXX-EFS"
 clixx_file_system_id="{clixx_file_system_id}"
