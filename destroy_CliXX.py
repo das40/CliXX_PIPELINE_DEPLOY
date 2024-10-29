@@ -63,12 +63,10 @@ for lb in load_balancers['LoadBalancers']:
         elbv2_client.delete_load_balancer(LoadBalancerArn=lb['LoadBalancerArn'])
         print(f"Application Load Balancer '{lb_name}' deleted.")
 
-# Specify the EFS name
+# 3. Delete EFS and mount targets
 efs_name = 'CLiXX-EFS'
-# Describe all file systems
 fs_info = efs_client.describe_file_systems()
 file_system_id = None
-# Find the file system with the specified name
 for fs in fs_info['FileSystems']:
     tags = efs_client.list_tags_for_resource(ResourceId=fs['FileSystemId'])['Tags']
     if any(tag['Key'] == 'Name' and tag['Value'] == efs_name for tag in tags):
@@ -79,25 +77,19 @@ for fs in fs_info['FileSystems']:
 if file_system_id is None:
     print(f"No EFS found with the name '{efs_name}'.")
 else:
-    # Retrieve all mount targets for the specified EFS
     mount_targets_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
     mount_target_ids = [mount['MountTargetId'] for mount in mount_targets_info['MountTargets']]
-
-    # Delete each mount target
     for mount_target_id in mount_target_ids:
         efs_client.delete_mount_target(MountTargetId=mount_target_id)
         print(f"Deleted mount target: {mount_target_id}")
 
-        # Wait for the mount target to be deleted
         while True:
             time.sleep(5)
             mount_target_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
-
             if not any(mount['MountTargetId'] == mount_target_id for mount in mount_target_info['MountTargets']):
                 print(f"Mount target {mount_target_id} is deleted.")
                 break
 
-    # Delete the EFS file system after all mount targets are deleted
     efs_client.delete_file_system(FileSystemId=file_system_id)
     print(f"Deleted EFS with File System ID: {file_system_id}")
 
@@ -128,10 +120,6 @@ for lt in lt_response['LaunchTemplates']:
     print(f"Launch Template '{launch_template_name}' deleted.")
 
 # 8. Delete VPC and dependencies
-# Specify the CIDR block and VPC name
-vpc_cidr_block = '10.0.0.0/16'
-vpc_name = 'CLIXXSTACKVPC'
-# Fetch the VPC by CIDR block and VPC name
 vpcs = ec2_client.describe_vpcs(
     Filters=[
         {'Name': 'cidr', 'Values': [vpc_cidr_block]},
@@ -140,7 +128,6 @@ vpcs = ec2_client.describe_vpcs(
 )
 
 if vpcs['Vpcs']:
-    # Get the VPC ID
     vpc_id = vpcs['Vpcs'][0]['VpcId']
     print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
@@ -153,44 +140,37 @@ if vpcs['Vpcs']:
             ec2_client.release_address(AllocationId=address['AllocationId'])
             print(f"Released Elastic IP: {address['PublicIp']}")
 
-    # 1. Detach and delete internet gateways
+    # Detach and delete internet gateways
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
-    # Unmap all public IP addresses associated with the VPC
+    
+    # Disassociate public IPs from network interfaces
     network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for interface in network_interfaces['NetworkInterfaces']:
-    if 'Association' in interface and 'AssociationId' in interface['Association']:
-        ec2_client.disassociate_address(AssociationId=interface['Association']['AssociationId'])
-        print(f"Disassociated public IP address from network interface {interface['NetworkInterfaceId']}")
+        if 'Association' in interface and 'AssociationId' in interface['Association']:
+            ec2_client.disassociate_address(AssociationId=interface['Association']['AssociationId'])
+            print(f"Disassociated public IP address from network interface {interface['NetworkInterfaceId']}")
 
     for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         print(f"Detaching and deleting Internet Gateway: {igw_id}")
         ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
         ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
-    # 2. Delete NAT gateways
+
+    # Delete NAT gateways
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for nat_gw in nat_gateways['NatGateways']:
         nat_gw_id = nat_gw['NatGatewayId']
         print(f"Deleting NAT Gateway: {nat_gw_id}")
         ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
-    # 3. Delete subnets
+
+    # Delete subnets
     subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for subnet in subnets['Subnets']:
         subnet_id = subnet['SubnetId']
         print(f"Deleting Subnet: {subnet_id}")
         ec2_client.delete_subnet(SubnetId=subnet_id)
-    
 
-vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'cidr', 'Values': [vpc_cidr_block]}, {'Name': 'tag:Name', 'Values': [vpc_name]}])
-if vpcs['Vpcs']:
-    vpc_id = vpcs['Vpcs'][0]['VpcId']
-    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
-    for igw in igws['InternetGateways']:
-        ec2_client.detach_internet_gateway(InternetGatewayId=igw['InternetGatewayId'], VpcId=vpc_id)
-        ec2_client.delete_internet_gateway(InternetGatewayId=igw['InternetGatewayId'])
-    subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-    for subnet in subnets['Subnets']:
-        ec2_client.delete_subnet(SubnetId=subnet['SubnetId'])
+    # Delete security groups
     security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for sg in security_groups['SecurityGroups']:
         if sg['GroupName'] != 'default':
