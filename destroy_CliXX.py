@@ -250,6 +250,7 @@ if vpcs['Vpcs']:
                         time.sleep(10)
                     else:
                         raise
+    
 
     # Delete VPC Peering Connections
     vpc_peering_connections = ec2_client.describe_vpc_peering_connections(Filters=[{'Name': 'requester-vpc-info.vpc-id', 'Values': [vpc_id]}])
@@ -258,6 +259,8 @@ if vpcs['Vpcs']:
         print(f"Deleting VPC Peering Connection: {pcx_id}")
         ec2_client.delete_vpc_peering_connection(VpcPeeringConnectionId=pcx_id)
         time.sleep(5)
+
+    
 
     # Finally, delete the VPC
     for attempt in range(5):
