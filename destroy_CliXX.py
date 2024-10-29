@@ -155,6 +155,13 @@ if vpcs['Vpcs']:
 
     # 1. Detach and delete internet gateways
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+    # Unmap all public IP addresses associated with the VPC
+    network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for interface in network_interfaces['NetworkInterfaces']:
+    if 'Association' in interface and 'AssociationId' in interface['Association']:
+        ec2_client.disassociate_address(AssociationId=interface['Association']['AssociationId'])
+        print(f"Disassociated public IP address from network interface {interface['NetworkInterfaceId']}")
+
     for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         print(f"Detaching and deleting Internet Gateway: {igw_id}")
