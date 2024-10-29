@@ -16,7 +16,7 @@ phases:
       - |
           deployment_flag='destroy'  # Define dynamically as needed
 
-          if [[ $deployment_flag == 'destro' ]]; then
+          if [[ $deployment_flag == 'destroy' ]]; then
             echo "Restoring ClixxApp database instance from snapshot..."
             python destroy_CliXX.py
             
