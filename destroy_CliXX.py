@@ -120,13 +120,13 @@ vpc_name = 'CLIXXSTACKVPC'
 #     ec2_client.delete_launch_template(LaunchTemplateId=lt['LaunchTemplateId'])
 #     print(f"Launch Template '{launch_template_name}' deleted.")
 
-# 8. Delete VPC and dependencies
-# vpcs = ec2_client.describe_vpcs(
-#     Filters=[
-#         {'Name': 'cidr', 'Values': [vpc_cidr_block]},
-#         {'Name': 'tag:Name', 'Values': [vpc_name]}
-#     ]
-# )
+8. Delete VPC and dependencies
+vpcs = ec2_client.describe_vpcs(
+    Filters=[
+        {'Name': 'cidr', 'Values': [vpc_cidr_block]},
+        {'Name': 'tag:Name', 'Values': [vpc_name]}
+    ]
+)
 
 # if vpcs['Vpcs']:
 #     vpc_id = vpcs['Vpcs'][0]['VpcId']
