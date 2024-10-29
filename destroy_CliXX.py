@@ -63,17 +63,43 @@ for lb in load_balancers['LoadBalancers']:
         elbv2_client.delete_load_balancer(LoadBalancerArn=lb['LoadBalancerArn'])
         print(f"Application Load Balancer '{lb_name}' deleted.")
 
-# 3. Delete EFS and mount targets
+# Specify the EFS name
+efs_name = 'CLiXX-EFS'
+# Describe all file systems
 fs_info = efs_client.describe_file_systems()
+file_system_id = None
+# Find the file system with the specified name
 for fs in fs_info['FileSystems']:
     tags = efs_client.list_tags_for_resource(ResourceId=fs['FileSystemId'])['Tags']
     if any(tag['Key'] == 'Name' and tag['Value'] == efs_name for tag in tags):
         file_system_id = fs['FileSystemId']
-        mount_targets_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
-        for mount_target in mount_targets_info['MountTargets']:
-            efs_client.delete_mount_target(MountTargetId=mount_target['MountTargetId'])
-        efs_client.delete_file_system(FileSystemId=file_system_id)
-        print(f"Deleted EFS with File System ID: {file_system_id}")
+        print(f"Found EFS with File System ID: {file_system_id}")
+        break
+
+if file_system_id is None:
+    print(f"No EFS found with the name '{efs_name}'.")
+else:
+    # Retrieve all mount targets for the specified EFS
+    mount_targets_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
+    mount_target_ids = [mount['MountTargetId'] for mount in mount_targets_info['MountTargets']]
+
+    # Delete each mount target
+    for mount_target_id in mount_target_ids:
+        efs_client.delete_mount_target(MountTargetId=mount_target_id)
+        print(f"Deleted mount target: {mount_target_id}")
+
+        # Wait for the mount target to be deleted
+        while True:
+            time.sleep(5)
+            mount_target_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
+
+            if not any(mount['MountTargetId'] == mount_target_id for mount in mount_target_info['MountTargets']):
+                print(f"Mount target {mount_target_id} is deleted.")
+                break
+
+    # Delete the EFS file system after all mount targets are deleted
+    efs_client.delete_file_system(FileSystemId=file_system_id)
+    print(f"Deleted EFS with File System ID: {file_system_id}")
 
 # 4. Delete Target Group
 response = elbv2_client.describe_target_groups(Names=[tg_name])
