@@ -128,9 +128,9 @@ vpcs = ec2_client.describe_vpcs(
     ]
 )
 
-# if vpcs['Vpcs']:
-#     vpc_id = vpcs['Vpcs'][0]['VpcId']
-#     print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
+ if vpcs['Vpcs']:
+     vpc_id = vpcs['Vpcs'][0]['VpcId']
+     print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
 #     # Release Elastic IPs associated with the VPC
 #     addresses = ec2_client.describe_addresses()
