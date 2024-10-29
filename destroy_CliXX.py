@@ -51,11 +51,31 @@ vpc_name = 'CLIXXSTACKVPC'
 # Deletion sequence
 
 # 1. Delete RDS instance
+# 1. Delete RDS instance and wait for deletion
 try:
     rds_client.delete_db_instance(DBInstanceIdentifier=db_instance_name, SkipFinalSnapshot=True)
     print(f"RDS instance '{db_instance_name}' deletion initiated.")
+    # Wait for the RDS instance to be fully deleted
+    while True:
+        time.sleep(15)
+        try:
+            rds_client.describe_db_instances(DBInstanceIdentifier=db_instance_name)
+            print(f"Waiting for RDS instance '{db_instance_name}' to be deleted...")
+        except rds_client.exceptions.DBInstanceNotFoundFault:
+            print(f"RDS instance '{db_instance_name}' has been deleted.")
+            break
 except rds_client.exceptions.DBInstanceNotFoundFault:
     print(f"RDS instance '{db_instance_name}' not found.")
+
+# After RDS deletion is confirmed, proceed to delete the DB Subnet Group
+try:
+    rds_client.delete_db_subnet_group(DBSubnetGroupName='clixxstackdbsubnetgroup')
+    print("DB Subnet Group 'clixxstackdbsubnetgroup' deleted successfully.")
+except rds_client.exceptions.DBSubnetGroupNotFoundFault:
+    print("DB Subnet Group 'clixxstackdbsubnetgroup' not found or already deleted.")
+except rds_client.exceptions.InvalidDBSubnetGroupStateFault as e:
+    print(f"Error deleting DB Subnet Group 'clixxstackdbsubnetgroup': {e}")
+
 
 # 2. Delete Application Load Balancer
 load_balancers = elbv2_client.describe_load_balancers()
@@ -260,14 +280,6 @@ if vpcs['Vpcs']:
         print(f"Deleting VPC Peering Connection: {pcx_id}")
         ec2_client.delete_vpc_peering_connection(VpcPeeringConnectionId=pcx_id)
         time.sleep(5)
-
-
-
-    try:
-        rds_client.delete_db_subnet_group(DBSubnetGroupName='clixxstackdbsubnetgroup')
-        print("DB Subnet Group 'clixxstackdbsubnetgroup' deleted successfully.")
-    except rds_client.exceptions.DBSubnetGroupNotFoundFault:
-        print("DB Subnet Group 'clixxstackdbsubnetgroup' not found or already deleted.")
 
     
 
