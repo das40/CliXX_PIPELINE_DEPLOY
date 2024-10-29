@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 import boto3, time
 
@@ -50,12 +49,10 @@ vpc_name = 'CLIXXSTACKVPC'
 
 # Deletion sequence
 
-# 1. Delete RDS instance
 # 1. Delete RDS instance and wait for deletion
 try:
     rds_client.delete_db_instance(DBInstanceIdentifier=db_instance_name, SkipFinalSnapshot=True)
     print(f"RDS instance '{db_instance_name}' deletion initiated.")
-    # Wait for the RDS instance to be fully deleted
     while True:
         time.sleep(15)
         try:
@@ -67,7 +64,7 @@ try:
 except rds_client.exceptions.DBInstanceNotFoundFault:
     print(f"RDS instance '{db_instance_name}' not found.")
 
-# After RDS deletion is confirmed, proceed to delete the DB Subnet Group
+# After RDS deletion, delete DB Subnet Group
 try:
     rds_client.delete_db_subnet_group(DBSubnetGroupName='clixxstackdbsubnetgroup')
     print("DB Subnet Group 'clixxstackdbsubnetgroup' deleted successfully.")
@@ -75,7 +72,6 @@ except rds_client.exceptions.DBSubnetGroupNotFoundFault:
     print("DB Subnet Group 'clixxstackdbsubnetgroup' not found or already deleted.")
 except rds_client.exceptions.InvalidDBSubnetGroupStateFault as e:
     print(f"Error deleting DB Subnet Group 'clixxstackdbsubnetgroup': {e}")
-
 
 # 2. Delete Application Load Balancer
 load_balancers = elbv2_client.describe_load_balancers()
@@ -85,7 +81,6 @@ for lb in load_balancers['LoadBalancers']:
         print(f"Application Load Balancer '{lb_name}' deleted.")
 
 # 3. Delete EFS and mount targets
-efs_name = 'CLiXX-EFS'
 fs_info = efs_client.describe_file_systems()
 file_system_id = None
 for fs in fs_info['FileSystems']:
@@ -95,22 +90,18 @@ for fs in fs_info['FileSystems']:
         print(f"Found EFS with File System ID: {file_system_id}")
         break
 
-if file_system_id is None:
-    print(f"No EFS found with the name '{efs_name}'.")
-else:
+if file_system_id:
     mount_targets_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
     mount_target_ids = [mount['MountTargetId'] for mount in mount_targets_info['MountTargets']]
     for mount_target_id in mount_target_ids:
         efs_client.delete_mount_target(MountTargetId=mount_target_id)
         print(f"Deleted mount target: {mount_target_id}")
-
         while True:
             time.sleep(5)
             mount_target_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
             if not any(mount['MountTargetId'] == mount_target_id for mount in mount_target_info['MountTargets']):
                 print(f"Mount target {mount_target_id} is deleted.")
                 break
-
     efs_client.delete_file_system(FileSystemId=file_system_id)
     print(f"Deleted EFS with File System ID: {file_system_id}")
 
@@ -152,7 +143,7 @@ if vpcs['Vpcs']:
     vpc_id = vpcs['Vpcs'][0]['VpcId']
     print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
-    # Release Elastic IPs associated with the VPC
+    # Release Elastic IPs
     addresses = ec2_client.describe_addresses()
     for address in addresses['Addresses']:
         if 'AssociationId' in address:
@@ -182,50 +173,54 @@ if vpcs['Vpcs']:
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for nat_gw in nat_gateways['NatGateways']:
         nat_gw_id = nat_gw['NatGatewayId']
-        ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
-        print(f"Deleting NAT Gateway: {nat_gw_id}")
-        time.sleep(5)
+        for attempt in range(5):
+            try:
+                ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
+                print(f"Deleting NAT Gateway: {nat_gw_id}")
+                time.sleep(5)
+                break
+            except ec2_client.exceptions.ClientError as e:
+                if 'DependencyViolation' in str(e):
+                    print(f"Retrying deletion of NAT Gateway {nat_gw_id} due to DependencyViolation...")
+                    time.sleep(10)
+                else:
+                    raise
+
+    # Delete any remaining network interfaces in the VPC
+    network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for interface in network_interfaces['NetworkInterfaces']:
+        eni_id = interface['NetworkInterfaceId']
+        print(f"Deleting Network Interface: {eni_id}")
+        if 'Attachment' in interface:
+            attachment_id = interface['Attachment']['AttachmentId']
+            try:
+                ec2_client.detach_network_interface(AttachmentId=attachment_id, Force=True)
+                print(f"Detached Network Interface: {eni_id}")
+                time.sleep(5)
+            except ec2_client.exceptions.ClientError as e:
+                if 'DependencyViolation' in str(e):
+                    print(f"Retrying detachment of Network Interface {eni_id} due to DependencyViolation...")
+                    time.sleep(10)
+                else:
+                    raise
+        # Attempt to delete the network interface
+        for attempt in range(5):
+            try:
+                ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
+                print(f"Network Interface {eni_id} deleted.")
+                break
+            except ec2_client.exceptions.ClientError as e:
+                if 'DependencyViolation' in str(e):
+                    print(f"Retrying deletion of Network Interface {eni_id} due to DependencyViolation...")
+                    time.sleep(10)
+                else:
+                    raise
 
     # Delete subnets
     subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for subnet in subnets['Subnets']:
         subnet_id = subnet['SubnetId']
         print(f"Deleting Subnet: {subnet_id}")
-
-        # Detach and delete network interfaces within the subnet
-        network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
-        for interface in network_interfaces['NetworkInterfaces']:
-            eni_id = interface['NetworkInterfaceId']
-            print(f"Deleting Network Interface: {eni_id}")
-
-            # Check if the network interface is attached to an instance
-            if 'Attachment' in interface:
-                attachment_id = interface['Attachment']['AttachmentId']
-                try:
-                    print(f"Detaching Network Interface: {eni_id} from Attachment: {attachment_id}")
-                    ec2_client.detach_network_interface(AttachmentId=attachment_id, Force=True)
-                    time.sleep(5)
-                except ec2_client.exceptions.ClientError as e:
-                    if 'UnsupportedOperation' in str(e):
-                        print(f"Cannot detach interface {eni_id}. Skipping deletion.")
-                        continue
-                    else:
-                        raise
-
-            # Attempt to delete the network interface with retries
-            for attempt in range(5):
-                try:
-                    ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
-                    print(f"Network Interface {eni_id} deleted.")
-                    break
-                except ec2_client.exceptions.ClientError as e:
-                    if 'DependencyViolation' in str(e):
-                        print(f"Retrying deletion of Network Interface {eni_id} due to DependencyViolation...")
-                        time.sleep(10)
-                    else:
-                        raise
-
-        # Retry mechanism for subnet deletion
         for attempt in range(5):
             try:
                 ec2_client.delete_subnet(SubnetId=subnet_id)
@@ -271,7 +266,6 @@ if vpcs['Vpcs']:
                         time.sleep(10)
                     else:
                         raise
-    
 
     # Delete VPC Peering Connections
     vpc_peering_connections = ec2_client.describe_vpc_peering_connections(Filters=[{'Name': 'requester-vpc-info.vpc-id', 'Values': [vpc_id]}])
@@ -281,10 +275,8 @@ if vpcs['Vpcs']:
         ec2_client.delete_vpc_peering_connection(VpcPeeringConnectionId=pcx_id)
         time.sleep(5)
 
-    
-
     # Finally, delete the VPC
-    for attempt in range(5):
+    for attempt in range(10):  # Increased retry count
         try:
             ec2_client.delete_vpc(VpcId=vpc_id)
             print(f"VPC '{vpc_name}' and all dependencies deleted.")
@@ -292,6 +284,6 @@ if vpcs['Vpcs']:
         except ec2_client.exceptions.ClientError as e:
             if 'DependencyViolation' in str(e):
                 print("Retrying VPC deletion due to DependencyViolation...")
-                time.sleep(10)
+                time.sleep(15)
             else:
                 raise
