@@ -233,8 +233,6 @@
 #     ec2_client.delete_vpc(VpcId=vpc_id)
 #     print(f"VPC '{vpc_name}' and all dependencies deleted.")
 
-
-
 #!/usr/bin/env python3
 import boto3, time
 
@@ -251,17 +249,14 @@ ec2_client = boto3.client('ec2', region_name="us-east-1",
                           aws_access_key_id=credentials['AccessKeyId'],
                           aws_secret_access_key=credentials['SecretAccessKey'],
                           aws_session_token=credentials['SessionToken'])
-# Other clients are not modified here
 
 # Resource identifiers
 vpc_cidr_block = '10.0.0.0/16'
 vpc_name = 'CLIXXSTACKVPC'
 
-# Skip sections that are already deleted
-# Commented out previous resources deletion
-# ...
+# Deletion sequence
 
-# Continue to Delete VPC and its remaining dependencies
+# Locate the VPC
 vpcs = ec2_client.describe_vpcs(
     Filters=[
         {'Name': 'cidr', 'Values': [vpc_cidr_block]},
@@ -273,7 +268,7 @@ if vpcs['Vpcs']:
     vpc_id = vpcs['Vpcs'][0]['VpcId']
     print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
-    # Delete remaining Elastic IPs associated with the VPC
+    # 1. Disassociate and delete Elastic IPs
     addresses = ec2_client.describe_addresses()
     for address in addresses['Addresses']:
         if 'AssociationId' in address:
@@ -282,27 +277,51 @@ if vpcs['Vpcs']:
             ec2_client.release_address(AllocationId=address['AllocationId'])
             print(f"Released Elastic IP: {address['PublicIp']}")
 
-    # Delete remaining NAT gateways if any
+    # 2. Delete any remaining NAT Gateways
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for nat_gw in nat_gateways['NatGateways']:
         nat_gw_id = nat_gw['NatGatewayId']
         print(f"Deleting NAT Gateway: {nat_gw_id}")
         ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
+        time.sleep(10)
 
-    # Only delete remaining subnets
+    # 3. Delete Network Interfaces in each subnet
     subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for subnet in subnets['Subnets']:
         subnet_id = subnet['SubnetId']
-        print(f"Deleting Subnet: {subnet_id}")
+        print(f"Deleting Network Interfaces in Subnet: {subnet_id}")
         
-        # Detach and delete network interfaces within the subnet
         network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
         for interface in network_interfaces['NetworkInterfaces']:
             eni_id = interface['NetworkInterfaceId']
             print(f"Deleting Network Interface: {eni_id}")
             ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
+            time.sleep(5)  # Ensure deletion is processed
 
-        # Retry mechanism for subnet deletion
+    # 4. Delete route tables (except main route table)
+    route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for rt in route_tables['RouteTables']:
+        if not rt['Associations'][0]['Main']:
+            ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
+            print(f"Deleted Route Table: {rt['RouteTableId']}")
+
+    # 5. Delete security groups (except default)
+    security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for sg in security_groups['SecurityGroups']:
+        if sg['GroupName'] != 'default':
+            sg_id = sg['GroupId']
+            print(f"Attempting to delete Security Group: {sg_id}")
+            ec2_client.delete_security_group(GroupId=sg_id)
+
+    # 6. Delete VPC endpoints
+    endpoints = ec2_client.describe_vpc_endpoints(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for endpoint in endpoints['VpcEndpoints']:
+        ec2_client.delete_vpc_endpoints(VpcEndpointIds=[endpoint['VpcEndpointId']])
+        print(f"Deleted VPC Endpoint: {endpoint['VpcEndpointId']}")
+
+    # 7. Delete subnets
+    for subnet in subnets['Subnets']:
+        subnet_id = subnet['SubnetId']
         for attempt in range(5):  # Retry up to 5 times
             try:
                 ec2_client.delete_subnet(SubnetId=subnet_id)
@@ -311,27 +330,36 @@ if vpcs['Vpcs']:
             except ec2_client.exceptions.ClientError as e:
                 if 'DependencyViolation' in str(e):
                     print(f"Retrying deletion of Subnet {subnet_id} due to DependencyViolation...")
-                    time.sleep(10)  # Wait before retrying
+                    time.sleep(10)
                 else:
-                    raise  # Raise other exceptions
+                    raise
 
-    # Delete remaining security groups
-    security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-    for sg in security_groups['SecurityGroups']:
-        if sg['GroupName'] != 'default':
-            sg_id = sg['GroupId']
-            print(f"Attempting to delete Security Group: {sg_id}")
-            for attempt in range(5):  # Retry up to 5 times
-                try:
-                    ec2_client.delete_security_group(GroupId=sg_id)
-                    print(f"Security Group {sg_id} deleted.")
-                    break
-                except ec2_client.exceptions.ClientError as e:
-                    if 'DependencyViolation' in str(e):
-                        print(f"Retrying deletion of Security Group {sg_id} due to DependencyViolation...")
-                        time.sleep(10)  # Wait before retrying
-                    else:
-                        raise  # Raise other exceptions if they occur
+    # 8. Delete Internet Gateways with retries
+    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+    for igw in igws['InternetGateways']:
+        igw_id = igw['InternetGatewayId']
+        for attempt in range(5):
+            try:
+                ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
+                ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
+                print(f"Internet Gateway {igw_id} detached and deleted.")
+                break
+            except ec2_client.exceptions.ClientError as e:
+                if 'DependencyViolation' in str(e):
+                    print(f"Retrying detachment of Internet Gateway {igw_id} due to DependencyViolation...")
+                    time.sleep(10)
+                else:
+                    raise
 
-    ec2_client.delete_vpc(VpcId=vpc_id)
-    print(f"VPC '{vpc_name}' and all dependencies deleted.")
+    # 9. Delete the VPC
+    for attempt in range(5):
+        try:
+            ec2_client.delete_vpc(VpcId=vpc_id)
+            print(f"VPC '{vpc_name}' and all dependencies deleted.")
+            break
+        except ec2_client.exceptions.ClientError as e:
+            if 'DependencyViolation' in str(e):
+                print(f"Retrying deletion of VPC {vpc_id} due to DependencyViolation...")
+                time.sleep(10)
+            else:
+                raise
