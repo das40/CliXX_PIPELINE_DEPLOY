@@ -186,36 +186,44 @@ if vpcs['Vpcs']:
                 else:
                     raise
 
+    
     # Delete any remaining network interfaces in the VPC
-    network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-    for interface in network_interfaces['NetworkInterfaces']:
-        eni_id = interface['NetworkInterfaceId']
-        print(f"Deleting Network Interface: {eni_id}")
-        if 'Attachment' in interface:
-            attachment_id = interface['Attachment']['AttachmentId']
-            try:
-                ec2_client.detach_network_interface(AttachmentId=attachment_id, Force=True)
-                print(f"Detached Network Interface: {eni_id}")
-                time.sleep(5)
-            except ec2_client.exceptions.ClientError as e:
-                if 'DependencyViolation' in str(e):
-                    print(f"Retrying detachment of Network Interface {eni_id} due to DependencyViolation...")
-                    time.sleep(10)
-                else:
-                    raise
-        # Attempt to delete the network interface
-        for attempt in range(5):
-            try:
-                ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
-                print(f"Network Interface {eni_id} deleted.")
+network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+for interface in network_interfaces['NetworkInterfaces']:
+    eni_id = interface['NetworkInterfaceId']
+    print(f"Deleting Network Interface: {eni_id}")
+    if 'Attachment' in interface:
+        attachment_id = interface['Attachment']['AttachmentId']
+        try:
+            ec2_client.detach_network_interface(AttachmentId=attachment_id, Force=True)
+            print(f"Detached Network Interface: {eni_id}")
+            time.sleep(5)
+        except ec2_client.exceptions.ClientError as e:
+            if 'UnsupportedOperation' in str(e):
+                print(f"Cannot detach interface {eni_id} due to ownership restriction. Skipping deletion.")
+                continue  # Skip to the next interface without halting the script
+            elif 'DependencyViolation' in str(e):
+                print(f"Retrying detachment of Network Interface {eni_id} due to DependencyViolation...")
+                time.sleep(10)
+            else:
+                raise
+    # Attempt to delete the network interface with retries
+    for attempt in range(5):
+        try:
+            ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
+            print(f"Network Interface {eni_id} deleted.")
+            break
+        except ec2_client.exceptions.ClientError as e:
+            if 'DependencyViolation' in str(e):
+                print(f"Retrying deletion of Network Interface {eni_id} due to DependencyViolation...")
+                time.sleep(10)
+            elif 'UnsupportedOperation' in str(e):
+                print(f"Network Interface {eni_id} cannot be deleted due to unsupported operation. Skipping.")
                 break
-            except ec2_client.exceptions.ClientError as e:
-                if 'DependencyViolation' in str(e):
-                    print(f"Retrying deletion of Network Interface {eni_id} due to DependencyViolation...")
-                    time.sleep(10)
-                else:
-                    raise
+            else:
+                raise
 
+    
     # Delete subnets
     subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for subnet in subnets['Subnets']:
