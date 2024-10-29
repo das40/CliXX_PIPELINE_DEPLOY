@@ -128,7 +128,7 @@ vpcs = ec2_client.describe_vpcs(
     ]
 )
 
- if vpcs['Vpcs']:
+if vpcs['Vpcs']:
      vpc_id = vpcs['Vpcs'][0]['VpcId']
      print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
