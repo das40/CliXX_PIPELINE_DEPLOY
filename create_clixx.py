@@ -473,7 +473,7 @@ efs_name="CLiXX-EFS"
 clixx_file_system_id="{clixx_file_system_id}"
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 MOUNT_POINT="/var/www/html"
-RECORD_NAME="${clixx_record_name}"  # Define RECORD_NAME here
+RECORD_NAME="{clixx_record_name}"  # Define RECORD_NAME here
 
 # Update packages and install dependencies
 sudo yum update -y
@@ -540,10 +540,10 @@ sudo sed -i "81i if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HT
 # Set WordPress options using RECORD_NAME
 if [ -n "$RECORD_NAME" ]; then
     mysql -u $DB_USER -p$DB_USER_PASSWORD -h $DB_HOST -D $DB_NAME -e "
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='home';
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='siteurl';
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='ping_sites';
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='open_shop_header_retina_logo';
+        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='home';
+        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='siteurl';
+        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='ping_sites';
+        UPDATE wp_options SET option_value='https://${{RECORD_NAME}}' WHERE option_name='open_shop_header_retina_logo';
     "
     echo "WordPress options updated with RECORD_NAME: $RECORD_NAME"
 else
