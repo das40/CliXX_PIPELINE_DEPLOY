@@ -518,14 +518,19 @@ fi
 
 # Clone your repository and set up WordPress configuration
 cd "$MOUNT_POINT"
+# Setup wp-config.php
 if [ -f "wp-config-sample.php" ]; then
     cp wp-config-sample.php wp-config.php
-    sed -i "s/database_name_here/${DB_NAME}/; s/username_here/${DB_USER}/; s/password_here/${DB_USER_PASSWORD}/; s/localhost/${DB_HOST}/" wp-config.php
-    sed -i "81i if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {{ \$_SERVER['HTTPS'] = 'on'; }}" wp-config.php
 else
     echo "wp-config-sample.php does not exist!" >> /var/log/userdata.log
-    exit 1
+    exit 1  # Exit if wp-config-sample.php doesn't exist
 fi
+
+# Replace placeholders in wp-config.php with actual values
+sed -i "s/database_name_here/${DB_NAME}/; s/username_here/${DB_USER}/; s/password_here/${DB_USER_PASSWORD}/; s/localhost/${DB_HOST}/" wp-config.php
+
+# Add HTTPS enforcement
+sudo sed -i "81i if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {{ \$_SERVER['HTTPS'] = 'on'; }}" wp-config.php
 
 # Set WordPress options using RECORD_NAME
 if [ -n "$RECORD_NAME" ]; then
