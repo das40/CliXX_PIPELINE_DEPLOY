@@ -467,13 +467,13 @@ exec > >(tee /var/log/userdata.log) 2>&1
 # Set variables
 DB_USER="wordpressuser"
 DB_USER_PASSWORD="W3lcome123"
-DB_HOST="your-db-host-url"  # Update with actual DB host
+DB_HOST="wordpressdbclixx.cdk4eccemey1.us-east-1.rds.amazonaws.com"  # Update with actual DB host
 DB_NAME="wordpressdb"
 efs_name="CLiXX-EFS"
 clixx_file_system_id="{clixx_file_system_id}"
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 MOUNT_POINT="/var/www/html"
-RECORD_NAME="${{record_name}}"  # Define RECORD_NAME here
+RECORD_NAME="${{clixx_record_name}}"  # Define RECORD_NAME here
 
 # Update packages and install dependencies
 sudo yum update -y
