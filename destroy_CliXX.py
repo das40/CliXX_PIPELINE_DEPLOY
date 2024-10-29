@@ -154,9 +154,6 @@ if vpcs['Vpcs']:
         igw_id = igw['InternetGatewayId']
         print(f"Detaching and deleting Internet Gateway: {igw_id}")
         # Detach and delete internet gateways with retries
-for igw in igws['InternetGateways']:
-    igw_id = igw['InternetGatewayId']
-    print(f"Detaching and deleting Internet Gateway: {igw_id}")
     
     for attempt in range(5):  # Retry up to 5 times
         try:
@@ -181,11 +178,33 @@ for igw in igws['InternetGateways']:
         ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
 
     # Delete subnets
-    subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-    for subnet in subnets['Subnets']:
-        subnet_id = subnet['SubnetId']
-        print(f"Deleting Subnet: {subnet_id}")
-        ec2_client.delete_subnet(SubnetId=subnet_id)
+subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+for subnet in subnets['Subnets']:
+    subnet_id = subnet['SubnetId']
+    print(f"Deleting Subnet: {subnet_id}")
+    #ec2_client.delete_subnet(SubnetId=subnet_id)
+
+    # Detach and delete network interfaces within the subnet
+    network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
+    for interface in network_interfaces['NetworkInterfaces']:
+        eni_id = interface['NetworkInterfaceId']
+        print(f"Deleting Network Interface: {eni_id}")
+        ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
+
+    for attempt in range(5):  # Retry up to 5 times
+        try:
+            ec2_client.delete_subnet(SubnetId=subnet_id)
+            print(f"Subnet {subnet_id} deleted.")
+            break
+        except ec2_client.exceptions.ClientError as e:
+        if 'DependencyViolation' in str(e):
+            print(f"Retrying deletion of Subnet {subnet_id} due to DependencyViolation...")
+            time.sleep(10)  # Wait before retrying
+        else:
+            raise  # Raise other exceptions
+
+
+    
 
     # Delete security groups
     security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
