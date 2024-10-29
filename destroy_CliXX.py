@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 import boto3, time
 
@@ -259,6 +260,14 @@ if vpcs['Vpcs']:
         print(f"Deleting VPC Peering Connection: {pcx_id}")
         ec2_client.delete_vpc_peering_connection(VpcPeeringConnectionId=pcx_id)
         time.sleep(5)
+
+
+
+    try:
+        rds_client.delete_db_subnet_group(DBSubnetGroupName='clixxstackdbsubnetgroup')
+        print("DB Subnet Group 'clixxstackdbsubnetgroup' deleted successfully.")
+    except rds_client.exceptions.DBSubnetGroupNotFoundFault:
+        print("DB Subnet Group 'clixxstackdbsubnetgroup' not found or already deleted.")
 
     
 
