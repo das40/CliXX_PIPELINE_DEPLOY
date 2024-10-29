@@ -18,7 +18,7 @@ phases:
 
           if [[ $deployment_flag == 'create' ]]; then
             echo "Restoring ClixxApp database instance from snapshot..."
-            python create_CliXX.py
+            python create_clixx.py
             
           # elif [[ $deployment_flag == 'destroy_Clixx.py' ]]; then
           #   echo "Deploying ClixxApp environment..."
