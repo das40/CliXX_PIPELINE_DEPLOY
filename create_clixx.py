@@ -459,21 +459,22 @@ else:
     print(f"Route 53 record already exists for {clixx_record_name}")
 
 # Encode the user data to Base64
-clixx_user_data_script = '''#!/bin/bash -x
+
+# Encode the user data to Base64
+clixx_user_data_script= f'''#!/bin/bash -x
 # Basic logging
 exec > >(tee /var/log/userdata.log) 2>&1
 
 # Set variables
 DB_USER="wordpressuser"
 DB_USER_PASSWORD="W3lcome123"
-DB_HOST="wordpressdbclixx.cdk4eccemey1.us-east-1.rds.amazonaws.com"
+DB_HOST="your-db-host-url"  # Update with actual DB host
 DB_NAME="wordpressdb"
 efs_name="CLiXX-EFS"
 clixx_file_system_id="{clixx_file_system_id}"
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 MOUNT_POINT="/var/www/html"
-RECORD_NAME="{clixx_record_name}"
-export DB_USER DB_USER_PASSWORD DB_HOST DB_NAME RECORD_NAME
+RECORD_NAME="${record_name}"  # Define RECORD_NAME here
 
 # Update packages and install dependencies
 sudo yum update -y
@@ -517,7 +518,12 @@ else
 fi
 
 # Clone your repository and set up WordPress configuration
-cd "$MOUNT_POINT"
+cd /var/www/html
+if ! git clone https://github.com/stackitgit/CliXX_Retail_Repository.git; then
+    echo "Git clone failed"
+fi
+cp -r CliXX_Retail_Repository/* /var/www/html
+
 # Setup wp-config.php
 if [ -f "wp-config-sample.php" ]; then
     cp wp-config-sample.php wp-config.php
@@ -527,7 +533,7 @@ else
 fi
 
 # Replace placeholders in wp-config.php with actual values
-sed -i "s/database_name_here/$DB_NAME/; s/username_here/$DB_USER/; s/password_here/$DB_USER_PASSWORD/; s/localhost/$DB_HOST/" wp-config.php
+sed -i "s/database_name_here/${DB_NAME}/; s/username_here/${DB_USER}/; s/password_here/${DB_USER_PASSWORD}/; s/localhost/${DB_HOST}/" wp-config.php
 
 # Add HTTPS enforcement
 sudo sed -i "81i if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {{ \$_SERVER['HTTPS'] = 'on'; }}" wp-config.php
@@ -535,10 +541,10 @@ sudo sed -i "81i if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HT
 # Set WordPress options using RECORD_NAME
 if [ -n "$RECORD_NAME" ]; then
     mysql -u $DB_USER -p$DB_USER_PASSWORD -h $DB_HOST -D $DB_NAME -e "
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='home';
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='siteurl';
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='ping_sites';
-        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='open_shop_header_retina_logo';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='home';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='siteurl';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='ping_sites';
+        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='open_shop_header_retina_logo';
     "
     echo "WordPress options updated with RECORD_NAME: $RECORD_NAME"
 else
@@ -579,6 +585,7 @@ sudo systemctl restart httpd
 # Log completion
 echo "WordPress installation and configuration completed."
 '''
+
 
 
 clixx_user_data_base64 = base64.b64encode(clixx_user_data_script.encode('utf-8')).decode('utf-8')
