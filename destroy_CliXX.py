@@ -168,8 +168,6 @@ if vpcs['Vpcs']:
             else:
                 raise  # Raise other exceptions
 
-        
-
     # Delete NAT gateways
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for nat_gw in nat_gateways['NatGateways']:
@@ -178,38 +176,48 @@ if vpcs['Vpcs']:
         ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
 
     # Delete subnets
-subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-for subnet in subnets['Subnets']:
-    subnet_id = subnet['SubnetId']
-    print(f"Deleting Subnet: {subnet_id}")
-    #ec2_client.delete_subnet(SubnetId=subnet_id)
+    subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for subnet in subnets['Subnets']:
+        subnet_id = subnet['SubnetId']
+        print(f"Deleting Subnet: {subnet_id}")
 
-    # Detach and delete network interfaces within the subnet
-    network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
-    for interface in network_interfaces['NetworkInterfaces']:
-        eni_id = interface['NetworkInterfaceId']
-        print(f"Deleting Network Interface: {eni_id}")
-        ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
+        # Detach and delete network interfaces within the subnet
+        network_interfaces = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
+        for interface in network_interfaces['NetworkInterfaces']:
+            eni_id = interface['NetworkInterfaceId']
+            print(f"Deleting Network Interface: {eni_id}")
+            ec2_client.delete_network_interface(NetworkInterfaceId=eni_id)
 
-    for attempt in range(5):  # Retry up to 5 times
-        try:
-            ec2_client.delete_subnet(SubnetId=subnet_id)
-            print(f"Subnet {subnet_id} deleted.")
-            break
-        except ec2_client.exceptions.ClientError as e:
-            if 'DependencyViolation' in str(e):
-                print(f"Retrying deletion of Subnet {subnet_id} due to DependencyViolation...")
-                time.sleep(10)  # Wait before retrying
-            else:
-                raise  # Raise other exceptions
-
-
-    
+        # Retry mechanism for subnet deletion
+        for attempt in range(5):  # Retry up to 5 times
+            try:
+                ec2_client.delete_subnet(SubnetId=subnet_id)
+                print(f"Subnet {subnet_id} deleted.")
+                break
+            except ec2_client.exceptions.ClientError as e:
+                if 'DependencyViolation' in str(e):
+                    print(f"Retrying deletion of Subnet {subnet_id} due to DependencyViolation...")
+                    time.sleep(10)  # Wait before retrying
+                else:
+                    raise  # Raise other exceptions
 
     # Delete security groups
     security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for sg in security_groups['SecurityGroups']:
         if sg['GroupName'] != 'default':
-            ec2_client.delete_security_group(GroupId=sg['GroupId'])
+            sg_id = sg['GroupId']
+            print(f"Attempting to delete Security Group: {sg_id}")
+            for attempt in range(5):  # Retry up to 5 times
+                try:
+                    ec2_client.delete_security_group(GroupId=sg_id)
+                    print(f"Security Group {sg_id} deleted.")
+                    break
+                except ec2_client.exceptions.ClientError as e:
+                    if 'DependencyViolation' in str(e):
+                        print(f"Retrying deletion of Security Group {sg_id} due to DependencyViolation...")
+                        time.sleep(10)  # Wait before retrying
+                    else:
+                        raise  # Raise other exceptions if they occur
+
     ec2_client.delete_vpc(VpcId=vpc_id)
     print(f"VPC '{vpc_name}' and all dependencies deleted.")
