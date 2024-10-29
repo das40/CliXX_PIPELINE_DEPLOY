@@ -128,6 +128,52 @@ for lt in lt_response['LaunchTemplates']:
     print(f"Launch Template '{launch_template_name}' deleted.")
 
 # 8. Delete VPC and dependencies
+# Specify the CIDR block and VPC name
+vpc_cidr_block = '10.0.0.0/16'
+vpc_name = 'CLIXXSTACKVPC'
+# Fetch the VPC by CIDR block and VPC name
+vpcs = ec2_client.describe_vpcs(
+    Filters=[
+        {'Name': 'cidr', 'Values': [vpc_cidr_block]},
+        {'Name': 'tag:Name', 'Values': [vpc_name]}
+    ]
+)
+
+if vpcs['Vpcs']:
+    # Get the VPC ID
+    vpc_id = vpcs['Vpcs'][0]['VpcId']
+    print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
+
+    # Release Elastic IPs associated with the VPC
+    addresses = ec2_client.describe_addresses()
+    for address in addresses['Addresses']:
+        if 'AssociationId' in address:
+            ec2_client.disassociate_address(AssociationId=address['AssociationId'])
+        if 'AllocationId' in address:
+            ec2_client.release_address(AllocationId=address['AllocationId'])
+            print(f"Released Elastic IP: {address['PublicIp']}")
+
+    # 1. Detach and delete internet gateways
+    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+    for igw in igws['InternetGateways']:
+        igw_id = igw['InternetGatewayId']
+        print(f"Detaching and deleting Internet Gateway: {igw_id}")
+        ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
+        ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
+    # 2. Delete NAT gateways
+    nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for nat_gw in nat_gateways['NatGateways']:
+        nat_gw_id = nat_gw['NatGatewayId']
+        print(f"Deleting NAT Gateway: {nat_gw_id}")
+        ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
+    # 3. Delete subnets
+    subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for subnet in subnets['Subnets']:
+        subnet_id = subnet['SubnetId']
+        print(f"Deleting Subnet: {subnet_id}")
+        ec2_client.delete_subnet(SubnetId=subnet_id)
+    
+
 vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'cidr', 'Values': [vpc_cidr_block]}, {'Name': 'tag:Name', 'Values': [vpc_name]}])
 if vpcs['Vpcs']:
     vpc_id = vpcs['Vpcs'][0]['VpcId']
