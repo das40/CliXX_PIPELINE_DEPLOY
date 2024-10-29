@@ -14,7 +14,7 @@ phases:
       - echo Build initiation `date`
       - echo "Setting up ClixxApp Security Group and configuring components"
       - |
-          deployment_flag='creare'  # Define dynamically as needed
+          deployment_flag='create'  # Define dynamically as needed
 
           if [[ $deployment_flag == 'create' ]]; then
             echo "Restoring ClixxApp database instance from snapshot..."
