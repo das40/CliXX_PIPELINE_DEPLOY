@@ -197,11 +197,11 @@ for subnet in subnets['Subnets']:
             print(f"Subnet {subnet_id} deleted.")
             break
         except ec2_client.exceptions.ClientError as e:
-        if 'DependencyViolation' in str(e):
-            print(f"Retrying deletion of Subnet {subnet_id} due to DependencyViolation...")
-            time.sleep(10)  # Wait before retrying
-        else:
-            raise  # Raise other exceptions
+            if 'DependencyViolation' in str(e):
+                print(f"Retrying deletion of Subnet {subnet_id} due to DependencyViolation...")
+                time.sleep(10)  # Wait before retrying
+            else:
+                raise  # Raise other exceptions
 
 
     
