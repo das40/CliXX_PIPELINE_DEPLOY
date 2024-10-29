@@ -540,10 +540,10 @@ sudo sed -i "81i if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HT
 # Set WordPress options using RECORD_NAME
 if [ -n "$RECORD_NAME" ]; then
     mysql -u $DB_USER -p$DB_USER_PASSWORD -h $DB_HOST -D $DB_NAME -e "
-        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='home';
-        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='siteurl';
-        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='ping_sites';
-        UPDATE wp_options SET option_value='https://${RECORD_NAME}' WHERE option_name='open_shop_header_retina_logo';
+        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='home';
+        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='siteurl';
+        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='ping_sites';
+        UPDATE wp_options SET option_value='https://$RECORD_NAME' WHERE option_name='open_shop_header_retina_logo';
     "
     echo "WordPress options updated with RECORD_NAME: $RECORD_NAME"
 else
