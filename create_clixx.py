@@ -459,11 +459,6 @@ else:
     print(f"Route 53 record already exists for {clixx_record_name}")
 
 # Encode the user data to Base64
-
-
- 
-
-# Encode the user data to Base64
 clixx_user_data_script = f'''#!/bin/bash -x
 # Basic logging
 exec > >(tee /var/log/userdata.log) 2>&1
@@ -471,13 +466,13 @@ exec > >(tee /var/log/userdata.log) 2>&1
 # Set variables
 DB_USER="wordpressuser"
 DB_USER_PASSWORD="W3lcome123"
-DB_HOST="wordpressdbclixx.cdk4eccemey1.us-east-1.rds.amazonaws.com"  # Update with actual DB host
+DB_HOST="wordpressdbclixx.cdk4eccemey1.us-east-1.rds.amazonaws.com"
 DB_NAME="wordpressdb"
 efs_name="CLiXX-EFS"
 clixx_file_system_id="{clixx_file_system_id}"
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 MOUNT_POINT="/var/www/html"
-RECORD_NAME="{clixx_record_name}"  # Define RECORD_NAME here
+RECORD_NAME="{clixx_record_name}"
 export DB_USER DB_USER_PASSWORD DB_HOST DB_NAME RECORD_NAME
 
 # Update packages and install dependencies
@@ -494,8 +489,8 @@ sudo systemctl enable httpd
 sudo usermod -a -G apache ec2-user
 sudo chown -R ec2-user:apache /var/www
 sudo chmod 2775 /var/www
-find /var/www -type d -exec sudo chmod 2775 {} \;
-find /var/www -type f -exec sudo chmod 0664 {} \;
+find /var/www -type d -exec sudo chmod 2775 {{}} \;
+find /var/www -type f -exec sudo chmod 0664 {{}} \;
 
 # Mount EFS
 AVAILABILITY_ZONE=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
@@ -522,7 +517,6 @@ else
 fi
 
 # Clone your repository and set up WordPress configuration
-# Copy and configure wp-config.php
 cd "$MOUNT_POINT"
 if [ -f "wp-config-sample.php" ]; then
     cp wp-config-sample.php wp-config.php
@@ -532,8 +526,6 @@ else
     echo "wp-config-sample.php does not exist!" >> /var/log/userdata.log
     exit 1
 fi
-
-
 
 # Set WordPress options using RECORD_NAME
 if [ -n "$RECORD_NAME" ]; then
@@ -555,8 +547,8 @@ sudo sed -i '151s/None/All/' /etc/httpd/conf/httpd.conf
 sudo chown -R apache /var/www
 sudo chgrp -R apache /var/www
 sudo chmod 2775 /var/www
-find /var/www -type d -exec sudo chmod 2775 {} \;
-find /var/www -type f -exec sudo chmod 0664 {} \;
+find /var/www -type d -exec sudo chmod 2775 {{}} \;
+find /var/www -type f -exec sudo chmod 0664 {{}} \;
 
 # Restart and enable Apache
 sudo systemctl restart httpd
@@ -573,8 +565,8 @@ sudo sed -i "s/database_name_here/$DB_NAME/; s/username_here/$DB_USER/; s/passwo
 
 # Adjust permissions for WordPress
 sudo chown -R apache:apache "$MOUNT_POINT"
-sudo find "$MOUNT_POINT" -type d -exec chmod 755 {} \;
-sudo find "$MOUNT_POINT" -type f -exec chmod 644 {} \;
+sudo find "$MOUNT_POINT" -type d -exec chmod 755 {{}} \;
+sudo find "$MOUNT_POINT" -type f -exec chmod 644 {{}} \;
 
 # Reload Apache
 sudo systemctl restart httpd
