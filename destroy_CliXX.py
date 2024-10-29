@@ -153,8 +153,25 @@ if vpcs['Vpcs']:
     for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         print(f"Detaching and deleting Internet Gateway: {igw_id}")
-        ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
-        ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
+        # Detach and delete internet gateways with retries
+for igw in igws['InternetGateways']:
+    igw_id = igw['InternetGatewayId']
+    print(f"Detaching and deleting Internet Gateway: {igw_id}")
+    
+    for attempt in range(5):  # Retry up to 5 times
+        try:
+            ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
+            ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
+            print(f"Internet Gateway {igw_id} detached and deleted.")
+            break  # Exit loop if successful
+        except ec2_client.exceptions.ClientError as e:
+            if 'DependencyViolation' in str(e):
+                print(f"Retrying detachment of Internet Gateway {igw_id} due to DependencyViolation...")
+                time.sleep(10)  # Wait before retrying
+            else:
+                raise  # Raise other exceptions
+
+        
 
     # Delete NAT gateways
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
