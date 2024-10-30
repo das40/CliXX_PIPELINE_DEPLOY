@@ -20,32 +20,6 @@ phases:
             echo "Restoring ClixxApp database instance from snapshot..."
             python create_clixx.py
             
-          # elif [[ $deployment_flag == 'deploy_env' ]]; then
-          #   echo "Deploying ClixxApp environment..."
-          #   python deploy_clixxapp_env.py
-
-          # elif [[ $deployment_flag == 'configure_fs' ]]; then
-          #   echo "Configuring ClixxApp on File System (FS)..."
-          #   python configure_clixxapp_fs.py
-
-          # elif [[ $deployment_flag == 'deploy_custom' ]]; then
-          #   echo "Deploying custom ClixxApp configuration on VPC..."
-          #   python deploy_clixxapp_custom_vpc.py
-
-          # elif [[ $deployment_flag == 'destroy_clixx' ]]; then
-          #   echo "Removing ClixxApp environment..."
-          #   python delete_clixxapp_env.py
-
-          # elif [[ $deployment_flag == 'delete_custom' ]]; then
-          #   echo "Deleting custom ClixxApp configuration on VPC..."
-          #   python delete_clixxapp_custom_vpc.py
-
-          # elif [[ $deployment_flag == 'assume_role' ]]; then
-          #   echo "Initiating role assumption for ClixxApp operations..."
-          #   python assume_clixx_role.py
-
-          # else
-          #   echo "Invalid option. Please reset the deployment_flag."
            fi
 
   post_build:
