@@ -46,7 +46,7 @@ phases:
 
           # else
           #   echo "Invalid option. Please reset the deployment_flag."
-          # fi
+           fi
 
   post_build:
     commands:
