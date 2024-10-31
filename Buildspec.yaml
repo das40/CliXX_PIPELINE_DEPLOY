@@ -6,33 +6,24 @@ phases:
       - pip install boto3
   pre_build:
     commands:
-      - echo "Initiating ClixxApp deployment"
-      - echo "Additional setup commands as needed"
+      - echo "Starting CliXX deployment"
+      - echo "more commands"
   build:
     on-failure: ABORT
     commands:
-      - echo Build initiation `date`
-      - echo "Setting up ClixxApp Security Group and configuring components"
-      - |
-
-          deployment_flag='destroy'  # Modify as needed, e.g., set via environment variable
-
-          if [[ $deployment_flag == 'destroy' ]]; then
-            echo "Restoring ClixxApp database instance from snapshot..."
-            python destroy_CliXX.py
-          elif [[ $deployment_flag == 'destroy' ]]; then
-            echo "Deleting ClixxApp resources..."
-            python destroy_clixx.py
+      # - echo starting build on ⁠ date ⁠
+      # - echo "Running Clixx Script"
+      # - python create_vpc    
+          deployment_flag="destroy"
+          if [[ $deployment_flag == 'create' ]]
+          then
+              python create_clixx.py
+          elif [[ $deployment_flag == 'destroy' ]]
+          then
+              python destroy_CliXX
           fi
-
-          # deployment_flag='create'  # Define dynamically as needed
-
-          # if [[ $deployment_flag == 'create' ]]; then
-          #   echo "Restoring ClixxApp database instance from snapshot..."
-          #   python create_clixx.py
-            
-          #  fi
-
   post_build:
     commands:
-      - echo Build completed successfully `date`
+      - echo Build completed on ⁠ date ⁠
+      #- echo "Running destroy CliXX Script"
+      #- python destroy_clixx_and_vpc.py
