@@ -14,7 +14,7 @@ phases:
       - echo Build initiation `date`
       - echo "Setting up ClixxApp Security Group and configuring components"
       - |
-<<<<<<< HEAD
+
           deployment_flag='create'  # Modify as needed, e.g., set via environment variable
 
           if [[ $deployment_flag == 'create' ]]; then
@@ -24,7 +24,7 @@ phases:
             echo "Deleting ClixxApp resources..."
             python destroy_clixx.py
           fi
-=======
+
           deployment_flag='create'  # Define dynamically as needed
 
           if [[ $deployment_flag == 'create' ]]; then
