@@ -7,15 +7,16 @@ phases:
   pre_build:
     commands:
       - echo "Starting CliXX deployment"
-      - echo "more commands"
+      - echo "Executing pre-build commands"
   build:
     on-failure: ABORT
     commands:
-      - deployment_flag="create"
-      - if [[ $deployment_flag == 'destroy' ]]; then
-          python destroy_CliXX.py;
+      - deployment_flag="destroy"
+      - |
+        if [[ $deployment_flag == 'destroy' ]]; then
+          python destroy_CliXX.py
         elif [[ $deployment_flag == 'create' ]]; then
-          python create_clixx.py;
+          python create_clixx.py
         fi
   post_build:
     commands:
