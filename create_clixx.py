@@ -164,14 +164,15 @@ if not clixx_pub_associations:
 else:
     print("Public subnets already associated with Public Route Table")
 
-clixx_priv_associations = [assoc for assoc in clixx_priv_route_table.associations if assoc.subnet_id in [clixx_private_subnet_1_id, clixx_private_subnet_2_id]]
-if not clixx_priv_associations:
-    clixx_priv_route_table.associate_with_subnet(SubnetId=clixx_private_subnet_1_id)
-    clixx_priv_route_table.associate_with_subnet(SubnetId=clixx_private_subnet_2_id)
-    print("Private subnets associated with Private Route Table")
-else:
-    print("Private subnets already associated with Private Route Table")
-print("Route tables created and associated with subnets.")
+# Check if each private subnet is already associated with the private route table
+for subnet_id in [clixx_private_subnet_1_id, clixx_private_subnet_2_id]:
+    existing_association = any(assoc.subnet_id == subnet_id for assoc in clixx_priv_route_table.associations)
+    if not existing_association:
+        clixx_priv_route_table.associate_with_subnet(SubnetId=subnet_id)
+        print(f"Private subnet {subnet_id} associated with Private Route Table")
+    else:
+        print(f"Private subnet {subnet_id} is already associated with the Private Route Table")
+
 
 # --- Security Group ---
 clixx_existing_public_sg = list(clixx_ec2_resource.security_groups.filter(Filters=[{'Name': 'group-name', 'Values': ['CLIXXSTACKSG']}]))
