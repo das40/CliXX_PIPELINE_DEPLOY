@@ -25,13 +25,13 @@ phases:
             python destroy_clixx.py
           fi
 
-          deployment_flag='create'  # Define dynamically as needed
+          # deployment_flag='create'  # Define dynamically as needed
 
-          if [[ $deployment_flag == 'create' ]]; then
-            echo "Restoring ClixxApp database instance from snapshot..."
-            python create_clixx.py
+          # if [[ $deployment_flag == 'create' ]]; then
+          #   echo "Restoring ClixxApp database instance from snapshot..."
+          #   python create_clixx.py
             
-           fi
+          #  fi
 
   post_build:
     commands:
