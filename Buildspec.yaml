@@ -11,19 +11,12 @@ phases:
   build:
     on-failure: ABORT
     commands:
-      # - echo starting build on ⁠ date ⁠
-      # - echo "Running Clixx Script"
-      # - python create_vpc    
-          deployment_flag="destroy"
-          if [[ $deployment_flag == 'destroy' ]]
-          then
-              python destroy_CliXX.py
-          elif [[ $deployment_flag == 'create' ]]
-          then
-              python create_clixx.py
-          fi
+      - deployment_flag="destroy"
+      - if [[ $deployment_flag == 'destroy' ]]; then
+          python destroy_CliXX.py;
+        elif [[ $deployment_flag == 'create' ]]; then
+          python create_clixx.py;
+        fi
   post_build:
     commands:
-      - echo Build completed on ⁠ date ⁠
-      #- echo "Running destroy CliXX Script"
-      #- python destroy_clixx_and_vpc.py
+      - echo "Build completed on $(date)"
