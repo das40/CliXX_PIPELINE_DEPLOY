@@ -14,6 +14,7 @@ phases:
       - echo Build initiation `date`
       - echo "Setting up ClixxApp Security Group and configuring components"
       - |
+<<<<<<< HEAD
           deployment_flag='destroy'  # Modify as needed, e.g., set via environment variable
 
           if [[ $deployment_flag == 'destroy' ]]; then
@@ -23,6 +24,15 @@ phases:
             echo "Deleting ClixxApp resources..."
             python destroy_clixx.py
           fi
+=======
+          deployment_flag='create'  # Define dynamically as needed
+
+          if [[ $deployment_flag == 'create' ]]; then
+            echo "Restoring ClixxApp database instance from snapshot..."
+            python create_clixx.py
+            
+           fi
+
   post_build:
     commands:
       - echo Build completed successfully `date`

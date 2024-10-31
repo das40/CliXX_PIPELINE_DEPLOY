@@ -366,4 +366,8 @@ if vpcs['Vpcs']:
     ec2_client.delete_vpc(VpcId=vpc_id)
     print(f"VPC {vpc_id} with Name '{vpc_name}' deleted.")
 else:
+
     print(f"No VPC found with CIDR block {vpc_cidr_block} and Name '{vpc_name}'")
+
+    print(f"No VPC found with CIDR block {vpc_cidr_block} and Name '{vpc_name}'")
+

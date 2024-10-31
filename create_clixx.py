@@ -650,5 +650,3 @@ else:
         ]
     )
     print("Auto Scaling Group created successfully.")
-
-
