@@ -17,7 +17,7 @@ phases:
           deployment_flag="destroy"
           if [[ $deployment_flag == 'destroy' ]]
           then
-              python destroy.CliXX.py
+              python destroy_CliXX.py
           elif [[ $deployment_flag == 'create' ]]
           then
               python create_clixx.py
