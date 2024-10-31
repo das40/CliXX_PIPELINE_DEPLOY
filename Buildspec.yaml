@@ -15,12 +15,12 @@ phases:
       # - echo "Running Clixx Script"
       # - python create_vpc    
           deployment_flag="destroy"
-          if [[ $deployment_flag == 'create' ]]
+          if [[ $deployment_flag == 'destroy' ]]
           then
-              python create.clixx.py
-          elif [[ $deployment_flag == 'destroy' ]]
+              python destroy.CliXX.py
+          elif [[ $deployment_flag == 'create' ]]
           then
-              python destroy_CliXX.py
+              python create_clixx.py
           fi
   post_build:
     commands:
