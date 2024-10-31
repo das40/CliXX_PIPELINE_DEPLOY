@@ -15,11 +15,11 @@ phases:
       - echo "Setting up ClixxApp Security Group and configuring components"
       - |
 
-          deployment_flag='destroy'  # Modify as needed, e.g., set via environment variable
+          deployment_flag='create'  # Modify as needed, e.g., set via environment variable
 
-          if [[ $deployment_flag == 'destroy' ]]; then
+          if [[ $deployment_flag == 'create' ]]; then
             echo "Restoring ClixxApp database instance from snapshot..."
-            python destroy_CliXX.py
+            python create_clixx.py
           elif [[ $deployment_flag == 'destroy' ]]; then
             echo "Deleting ClixxApp resources..."
             python destroy_clixx.py
