@@ -11,7 +11,7 @@ phases:
   build:
     on-failure: ABORT
     commands:
-      - deployment_flag="create"
+      - deployment_flag="destroy"
       - |
         if [[ $deployment_flag == 'destroy' ]]; then
           python destroy_CliXX.py

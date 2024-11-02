@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 import boto3, botocore, base64, time
 
+import logging
+
+# Set up logging configuration
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger()
+
 # Assume Role to interact with AWS resources
 clixx_sts_client = boto3.client('sts')
 clixx_assumed_role_object = clixx_sts_client.assume_role(
@@ -72,9 +78,9 @@ if not clixx_vpcs['Vpcs']:
     clixx_ec2_client.create_tags(Resources=[clixx_vpc.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKVPC'}])
     clixx_ec2_client.modify_vpc_attribute(VpcId=clixx_vpc.id, EnableDnsSupport={'Value': True})
     clixx_ec2_client.modify_vpc_attribute(VpcId=clixx_vpc.id, EnableDnsHostnames={'Value': True})
-    print(f"VPC created: {clixx_vpc.id} with Name tag 'CLIXXSTACKVPC'")
+    logger.info(f"VPC created: {clixx_vpc.id} with Name tag 'CLIXXSTACKVPC'")
 else:
-    print(f"VPC already exists with CIDR block {clixx_vpc_cidr_block}")
+    logger.info(f"VPC already exists with CIDR block {clixx_vpc_cidr_block}")
 clixx_vpc_id = clixx_vpcs['Vpcs'][0]['VpcId'] if clixx_vpcs['Vpcs'] else clixx_vpc.id
 
 # --- Subnets ---
@@ -82,36 +88,36 @@ clixx_subnets_1 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'V
 if not clixx_subnets_1['Subnets']:
     clixx_subnet_1 = clixx_ec2_client.create_subnet(CidrBlock=clixx_public_subnet_cidr_block_1, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "a")
     clixx_ec2_client.create_tags(Resources=[clixx_subnet_1['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPUBSUB"}])
-    print(f"Public Subnet 1 created: {clixx_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB'")
+    logger.info(f"Public Subnet 1 created: {clixx_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB'")
 else:
-    print(f"Public Subnet 1 already exists with CIDR block {clixx_public_subnet_cidr_block_1}")
+    logger.info(f"Public Subnet 1 already exists with CIDR block {clixx_public_subnet_cidr_block_1}")
 clixx_subnet_1_id = clixx_subnets_1['Subnets'][0]['SubnetId'] if clixx_subnets_1['Subnets'] else clixx_subnet_1['Subnet']['SubnetId']
 
 clixx_subnets_2 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'Values': [clixx_public_subnet_cidr_block_2]}])
 if not clixx_subnets_2['Subnets']:
     clixx_subnet_2 = clixx_ec2_client.create_subnet(CidrBlock=clixx_public_subnet_cidr_block_2, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "b")
     clixx_ec2_client.create_tags(Resources=[clixx_subnet_2['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPUBSUB2"}])
-    print(f"Public Subnet 2 created: {clixx_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB2'")
+    logger.info(f"Public Subnet 2 created: {clixx_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB2'")
 else:
-    print(f"Public Subnet 2 already exists with CIDR block {clixx_public_subnet_cidr_block_2}")
+    logger.info(f"Public Subnet 2 already exists with CIDR block {clixx_public_subnet_cidr_block_2}")
 clixx_subnet_2_id = clixx_subnets_2['Subnets'][0]['SubnetId'] if clixx_subnets_2['Subnets'] else clixx_subnet_2['Subnet']['SubnetId']
 
 clixx_private_subnets_1 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'Values': [clixx_private_subnet_cidr_block_1]}])
 if not clixx_private_subnets_1['Subnets']:
     clixx_private_subnet_1 = clixx_ec2_client.create_subnet(CidrBlock=clixx_private_subnet_cidr_block_1, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "a")
     clixx_ec2_client.create_tags(Resources=[clixx_private_subnet_1['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPRIVSUB1"}])
-    print(f"Private Subnet 1 created: {clixx_private_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB1'")
+    logger.info(f"Private Subnet 1 created: {clixx_private_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB1'")
 else:
-    print(f"Private Subnet 1 already exists with CIDR block {clixx_private_subnet_cidr_block_1}")
+    logger.info(f"Private Subnet 1 already exists with CIDR block {clixx_private_subnet_cidr_block_1}")
 clixx_private_subnet_1_id = clixx_private_subnets_1['Subnets'][0]['SubnetId'] if clixx_private_subnets_1['Subnets'] else clixx_private_subnet_1['Subnet']['SubnetId']
 
 clixx_private_subnets_2 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'Values': [clixx_private_subnet_cidr_block_2]}])
 if not clixx_private_subnets_2['Subnets']:
     clixx_private_subnet_2 = clixx_ec2_client.create_subnet(CidrBlock=clixx_private_subnet_cidr_block_2, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "b")
     clixx_ec2_client.create_tags(Resources=[clixx_private_subnet_2['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPRIVSUB2"}])
-    print(f"Private Subnet 2 created: {clixx_private_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB2'")
+    logger.info(f"Private Subnet 2 created: {clixx_private_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB2'")
 else:
-    print(f"Private Subnet 2 already exists with CIDR block {clixx_private_subnet_cidr_block_2}")
+    logger.info(f"Private Subnet 2 already exists with CIDR block {clixx_private_subnet_cidr_block_2}")
 clixx_private_subnet_2_id = clixx_private_subnets_2['Subnets'][0]['SubnetId'] if clixx_private_subnets_2['Subnets'] else clixx_private_subnet_2['Subnet']['SubnetId']
 
 # --- Internet Gateway ---
@@ -120,29 +126,29 @@ if not clixx_igw_list:
     clixx_igw = clixx_ec2_resource.create_internet_gateway()
     clixx_ec2_client.attach_internet_gateway(VpcId=clixx_vpc_id, InternetGatewayId=clixx_igw.id)
     clixx_ec2_client.create_tags(Resources=[clixx_igw.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKIGW'}])
-    print(f"Internet Gateway created: {clixx_igw.id} with Name tag 'CLIXXSTACKIGW'")
+    logger.info(f"Internet Gateway created: {clixx_igw.id} with Name tag 'CLIXXSTACKIGW'")
 else:
     clixx_igw = clixx_igw_list[0]
-    print(f"Internet Gateway already exists with ID {clixx_igw.id}")
+    logger.info(f"Internet Gateway already exists with ID {clixx_igw.id}")
 
 # --- Route Tables ---
 clixx_pub_route_table_list = list(clixx_ec2_resource.route_tables.filter(Filters=[{'Name': 'association.main', 'Values': ['false']}]))
 if not clixx_pub_route_table_list:
     clixx_pub_route_table = clixx_ec2_resource.create_route_table(VpcId=clixx_vpc_id)
     clixx_ec2_client.create_tags(Resources=[clixx_pub_route_table.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKPUBRT'}])
-    print(f"Public Route Table created: {clixx_pub_route_table.id} with Name tag 'CLIXXSTACKPUBRT'")
+    logger.info(f"Public Route Table created: {clixx_pub_route_table.id} with Name tag 'CLIXXSTACKPUBRT'")
 else:
     clixx_pub_route_table = clixx_pub_route_table_list[0]
-    print(f"Public Route Table already exists with ID {clixx_pub_route_table.id}")
+    logger.info(f"Public Route Table already exists with ID {clixx_pub_route_table.id}")
 
 clixx_priv_route_table_list = list(clixx_ec2_resource.route_tables.filter(Filters=[{'Name': 'association.main', 'Values': ['false']}]))
 if not clixx_priv_route_table_list:
     clixx_priv_route_table = clixx_ec2_resource.create_route_table(VpcId=clixx_vpc_id)
     clixx_ec2_client.create_tags(Resources=[clixx_priv_route_table.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKPRIVRT'}])
-    print(f"Private Route Table created: {clixx_priv_route_table.id} with Name tag 'CLIXXSTACKPRIVRT'")
+    logger.info(f"Private Route Table created: {clixx_priv_route_table.id} with Name tag 'CLIXXSTACKPRIVRT'")
 else:
     clixx_priv_route_table = clixx_priv_route_table_list[0]
-    print(f"Private Route Table already exists with ID {clixx_priv_route_table.id}")
+    logger.info(f"Private Route Table already exists with ID {clixx_priv_route_table.id}")
 
 # --- Route for Internet Access for Public Subnets ---
 clixx_routes = [route for route in clixx_pub_route_table.routes if route.destination_cidr_block == '0.0.0.0/0']
@@ -151,27 +157,27 @@ if not clixx_routes:
         DestinationCidrBlock='0.0.0.0/0',
         GatewayId=clixx_igw.id
     )
-    print("Public route created for Internet access")
+    logger.info("Public route created for Internet access")
 else:
-    print("Public route for Internet access already exists")
+    logger.info("Public route for Internet access already exists")
 
 # --- Associate Subnets with Route Tables ---
 clixx_pub_associations = [assoc for assoc in clixx_pub_route_table.associations if assoc.subnet_id in [clixx_subnet_1_id, clixx_subnet_2_id]]
 if not clixx_pub_associations:
     clixx_pub_route_table.associate_with_subnet(SubnetId=clixx_subnet_1_id) 
     clixx_pub_route_table.associate_with_subnet(SubnetId=clixx_subnet_2_id)
-    print("Public subnets associated with Public Route Table")
+    logger.info("Public subnets associated with Public Route Table")
 else:
-    print("Public subnets already associated with Public Route Table")
+    logger.info("Public subnets already associated with Public Route Table")
 
 # Check if each private subnet is already associated with the private route table
 for subnet_id in [clixx_private_subnet_1_id, clixx_private_subnet_2_id]:
     existing_association = any(assoc.subnet_id == subnet_id for assoc in clixx_priv_route_table.associations)
     if not existing_association:
         clixx_priv_route_table.associate_with_subnet(SubnetId=subnet_id)
-        print(f"Private subnet {subnet_id} associated with Private Route Table")
+        logger.info(f"Private subnet {subnet_id} associated with Private Route Table")
     else:
-        print(f"Private subnet {subnet_id} is already associated with the Private Route Table")
+        logger.info(f"Private subnet {subnet_id} is already associated with the Private Route Table")
 
 
 # --- Security Group ---
@@ -194,10 +200,10 @@ if not clixx_existing_public_sg:
             {'IpProtocol': 'icmp', 'FromPort': -1, 'ToPort': -1, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
         ]
     )
-    print(f"Public Security Group created: {clixx_public_sg.id}")
+    logger.info(f"Public Security Group created: {clixx_public_sg.id}")
 else:
     clixx_public_sg = clixx_existing_public_sg[0]
-    print(f"Public Security Group already exists with ID: {clixx_public_sg.id}")
+    logger.info(f"Public Security Group already exists with ID: {clixx_public_sg.id}")
 
 clixx_existing_private_sg = list(clixx_ec2_resource.security_groups.filter(Filters=[{'Name': 'group-name', 'Values': ['CLIXXSTACKSGPRIV']}]))
 if not clixx_existing_private_sg:
@@ -214,11 +220,11 @@ if not clixx_existing_private_sg:
             {'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
         ]
     )
-    print(f"Private Security Group created: {clixx_private_sg.id}")
+    logger.info(f"Private Security Group created: {clixx_private_sg.id}")
 else:
     clixx_private_sg = clixx_existing_private_sg[0]
-    print(f"Private Security Group already exists with ID: {clixx_private_sg.id}")
-print(f"Security groups created: Public SG (ID: {clixx_public_sg.id}), Private SG (ID: {clixx_private_sg.id})")
+    logger.info(f"Private Security Group already exists with ID: {clixx_private_sg.id}")
+logger.info(f"Security groups created: Public SG (ID: {clixx_public_sg.id}), Private SG (ID: {clixx_private_sg.id})")
 
 # --- RDS Instance ---
 clixx_DBSubnetGroupName = 'CLIXXSTACKDBSUBNETGROUP'
@@ -228,7 +234,7 @@ for clixx_subnet_group in clixx_response['DBSubnetGroups']:
     if clixx_subnet_group['DBSubnetGroupName'] == clixx_DBSubnetGroupName:
         clixx_db_subnet_group_exists = True
         clixx_DBSubnetGroupName = clixx_subnet_group['DBSubnetGroupName']
-        print(f"DB Subnet Group '{clixx_DBSubnetGroupName}' already exists. Proceeding with the existing one.")
+        logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' already exists. Proceeding with the existing one.")
         break
 
 if not clixx_db_subnet_group_exists:
@@ -239,15 +245,15 @@ if not clixx_db_subnet_group_exists:
         Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKDBSUBNETGROUP'}]
     )
     clixx_DBSubnetGroupName = clixx_response['DBSubnetGroup']['DBSubnetGroupName']
-    print(f"DB Subnet Group '{clixx_DBSubnetGroupName}' created successfully.")
+    logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' created successfully.")
 
 clixx_db_instances = clixx_rds_client.describe_db_instances()
 clixx_db_instance_identifiers = [db['DBInstanceIdentifier'] for db in clixx_db_instances['DBInstances']]
 if clixx_db_instance_identifier in clixx_db_instance_identifiers:
     clixx_instances = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=clixx_db_instance_identifier)
-    print(f"DB Instance '{clixx_db_instance_identifier}' already exists. Details: {clixx_instances}")
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' already exists. Details: {clixx_instances}")
 else:
-    print(f"DB Instance '{clixx_db_instance_identifier}' not found. Restoring from snapshot...")
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' not found. Restoring from snapshot...")
     clixx_response = clixx_rds_client.restore_db_instance_from_db_snapshot(
         DBInstanceIdentifier=clixx_db_instance_identifier,
         DBSnapshotIdentifier=clixx_db_snapshot_identifier,
@@ -257,7 +263,7 @@ else:
         PubliclyAccessible=False,
         Tags=[{'Key': 'Name', 'Value': 'wordpressdbclixx'}]
     )
-    print(f"Restore operation initiated. Response: {clixx_response}")
+    logger.info(f"Restore operation initiated. Response: {clixx_response}")
 
 # --- Create EFS file system ---
 clixx_efs_response = clixx_efs_client.describe_file_systems(
@@ -267,7 +273,7 @@ clixx_efs_response = clixx_efs_client.describe_file_systems(
 # If EFS exists, proceed with the existing EFS
 if clixx_efs_response['FileSystems']:
     clixx_file_system_id = clixx_efs_response['FileSystems'][0]['FileSystemId']
-    print(f"EFS already exists with FileSystemId: {clixx_file_system_id}")
+    logger.info(f"EFS already exists with FileSystemId: {clixx_file_system_id}")
 else:
     # Create EFS if it doesn't exist
     clixx_efs_response = clixx_efs_client.create_file_system(
@@ -275,7 +281,7 @@ else:
         PerformanceMode='generalPurpose'
     )
     clixx_file_system_id = clixx_efs_response['FileSystemId']
-    print(f"EFS created with FileSystemId: {clixx_file_system_id}")
+    logger.info(f"EFS created with FileSystemId: {clixx_file_system_id}")
 
 # Wait until the EFS file system is in 'available' state
 while True:
@@ -284,10 +290,10 @@ while True:
     )
     clixx_lifecycle_state = clixx_efs_info['FileSystems'][0]['LifeCycleState']
     if clixx_lifecycle_state == 'available':
-        print(f"EFS CLiXX-EFS is now available with FileSystemId: {clixx_file_system_id}")
+        logger.info(f"EFS CLiXX-EFS is now available with FileSystemId: {clixx_file_system_id}")
         break
     else:
-        print(f"EFS is in '{clixx_lifecycle_state}' state. Waiting for it to become available...")
+        logger.info(f"EFS is in '{clixx_lifecycle_state}' state. Waiting for it to become available...")
         time.sleep(10)
 
 # Add a tag to the EFS file system
@@ -309,9 +315,9 @@ for clixx_private_subnet_id in clixx_private_subnet_ids:
             SubnetId=clixx_private_subnet_id,
             SecurityGroups=[clixx_private_sg.id]
         )
-        print(f"Mount target created in Private Subnet: {clixx_private_subnet_id}")
+        logger.info(f"Mount target created in Private Subnet: {clixx_private_subnet_id}")
     else:
-        print(f"Mount target already exists in Private Subnet: {clixx_private_subnet_id}")
+        logger.info(f"Mount target already exists in Private Subnet: {clixx_private_subnet_id}")
 
 # Attach Lifecycle Policy (optional)
 clixx_efs_client.put_lifecycle_configuration(
@@ -325,7 +331,7 @@ clixx_efs_client.put_lifecycle_configuration(
         }
     ]
 )
-print(f"Lifecycle policy applied to EFS CLiXX-EFS")
+logger.info(f"Lifecycle policy applied to EFS CLiXX-EFS")
 
 # --- Create Target Group ---
 # List all target groups and filter for 'CLiXX-TG'
@@ -336,11 +342,11 @@ clixx_target_group_arn = None
 for clixx_tg in clixx_target_groups:
     if clixx_tg['TargetGroupName'] == 'CLiXX-TG':
         clixx_target_group_arn = clixx_tg['TargetGroupArn']
-        print(f"Target Group already exists with ARN: {clixx_target_group_arn}")
+        logger.info(f"Target Group already exists with ARN: {clixx_target_group_arn}")
         break
 if clixx_target_group_arn is None:
     # Target group does not exist, create a new one
-    print("Target Group 'CLiXX-TG' not found. Creating a new target group.")
+    logger.info("Target Group 'CLiXX-TG' not found. Creating a new target group.")
     clixx_target_group = clixx_elbv2_client.create_target_group(
         Name='CLiXX-TG',
         Protocol='HTTP',
@@ -359,7 +365,7 @@ if clixx_target_group_arn is None:
         }
     )
     clixx_target_group_arn = clixx_target_group['TargetGroups'][0]['TargetGroupArn']
-    print(f"Target Group created with ARN: {clixx_target_group_arn}")
+    logger.info(f"Target Group created with ARN: {clixx_target_group_arn}")
 
 # --- Create Application Load Balancer ---
 # List all load balancers
@@ -370,11 +376,11 @@ clixx_load_balancer_arn = None
 for clixx_lb in clixx_load_balancers:
     if clixx_lb['LoadBalancerName'] == 'CLiXX-LB':
         clixx_load_balancer_arn = clixx_lb['LoadBalancerArn']
-        print(f"Load Balancer already exists with ARN: {clixx_load_balancer_arn}")
+        logger.info(f"Load Balancer already exists with ARN: {clixx_load_balancer_arn}")
         break
 if clixx_load_balancer_arn is None:
     # Load balancer does not exist, create a new one
-    print("Load Balancer 'CLiXX-LB' not found. Creating a new load balancer.")
+    logger.info("Load Balancer 'CLiXX-LB' not found. Creating a new load balancer.")
     clixx_load_balancer = clixx_elbv2_client.create_load_balancer(
         Name='CLiXX-LB',
         Subnets=[clixx_subnet_1_id, clixx_subnet_2_id],
@@ -393,7 +399,7 @@ if clixx_load_balancer_arn is None:
         ]
     )
     clixx_load_balancer_arn = clixx_load_balancer['LoadBalancers'][0]['LoadBalancerArn']
-    print(f"Load Balancer created with ARN: {clixx_load_balancer_arn}")
+    logger.info(f"Load Balancer created with ARN: {clixx_load_balancer_arn}")
 
 # Create Listener for the Load Balancer (HTTP & HTTPS)
 # Retrieve listeners for the load balancer
@@ -409,9 +415,9 @@ if not clixx_http_listener_exists:
         Port=80,
         DefaultActions=[{'Type': 'forward', 'TargetGroupArn': clixx_target_group_arn}]
     )
-    print(f"HTTP Listener created for Load Balancer: {clixx_load_balancer_arn}")
+    logger.info(f"HTTP Listener created for Load Balancer: {clixx_load_balancer_arn}")
 else:
-    print("HTTP Listener already exists.")
+    logger.info("HTTP Listener already exists.")
 
 # Check if HTTPS listener exists
 clixx_https_listener_exists = any(listener['Protocol'] == 'HTTPS' for listener in clixx_existing_listeners)
@@ -426,9 +432,9 @@ if not clixx_https_listener_exists:
         }],
         DefaultActions=[{'Type': 'forward', 'TargetGroupArn': clixx_target_group_arn}]
     )
-    print(f"HTTPS Listener created for Load Balancer: {clixx_load_balancer_arn}")
+    logger.info(f"HTTPS Listener created for Load Balancer: {clixx_load_balancer_arn}")
 else:
-    print("HTTPS Listener already exists.")
+    logger.info("HTTPS Listener already exists.")
 
 # --- Create Route 53 record for the load balancer ---
 clixx_route53_response = clixx_route53_client.list_resource_record_sets(
@@ -455,9 +461,9 @@ if not clixx_record_exists:
             }]
         }
     )
-    print(f"Route 53 record created for {clixx_record_name}")
+    logger.info(f"Route 53 record created for {clixx_record_name}")
 else:
-    print(f"Route 53 record already exists for {clixx_record_name}")
+    logger.info(f"Route 53 record already exists for {clixx_record_name}")
 
 # Encode the user data to Base64
 # Encode the user data to Base64
@@ -598,7 +604,7 @@ clixx_launch_template_names = [lt['LaunchTemplateName'] for lt in clixx_all_lt_r
 if 'CLiXX-LT' in clixx_launch_template_names:
     # Get the ID of the existing launch template
     clixx_launch_template_id = next(lt['LaunchTemplateId'] for lt in clixx_all_lt_response['LaunchTemplates'] if lt['LaunchTemplateName'] == 'CLiXX-LT')
-    print(f"Launch Template already exists with ID: {clixx_launch_template_id}")
+    logger.info(f"Launch Template already exists with ID: {clixx_launch_template_id}")
 else:
     # Create a new launch template since it doesn't exist
     clixx_launch_template = clixx_ec2_client.create_launch_template(
@@ -621,14 +627,14 @@ else:
         }
     )
     clixx_launch_template_id = clixx_launch_template['LaunchTemplate']['LaunchTemplateId']
-    print(f"Launch Template created with ID: {clixx_launch_template_id}")
+    logger.info(f"Launch Template created with ID: {clixx_launch_template_id}")
 
 # --- Create Auto Scaling Group ---
 # List all Auto Scaling Groups and check for 'CLiXX-ASG'
 clixx_all_asg_response = clixx_autoscaling_client.describe_auto_scaling_groups()
 clixx_asg_names = [asg['AutoScalingGroupName'] for asg in clixx_all_asg_response['AutoScalingGroups']]
 if 'CLiXX-ASG' in clixx_asg_names:
-    print("Auto Scaling Group already exists.")
+    logger.info("Auto Scaling Group already exists.")
 else:
     # Create a new Auto Scaling Group since it doesn't exist
     clixx_autoscaling_client.create_auto_scaling_group(
@@ -650,4 +656,4 @@ else:
             }
         ]
     )
-    print("Auto Scaling Group created successfully.")
+    logger.info("Auto Scaling Group created successfully.")
