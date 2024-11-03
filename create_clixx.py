@@ -60,7 +60,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
     while True:
         try:
             if resource_type == 'vpc':
-                response = ec2_client.describe_vpcs(VpcIds=[resource_id])
+                response = clixx_ec2_client.describe_vpcs(VpcIds=[resource_id])
                 state = response['Vpcs'][0]['State']
                 if state == 'available':
                     logger.info(f"VPC {resource_id} is now available.")
@@ -68,7 +68,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"VPC {resource_id} is currently {state}. Checking again in 20 seconds...")
             
             elif resource_type == 'db_subnet_group':
-                response = rds_client.describe_db_subnet_groups(DBSubnetGroupName=resource_id)
+                response = clixx_rds_client.describe_db_subnet_groups(DBSubnetGroupName=resource_id)
                 db_subnet_group = response['DBSubnetGroups'][0]
                 status = db_subnet_group['SubnetGroupStatus']
                 if status == 'Complete':
@@ -77,7 +77,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"DB Subnet Group {resource_id} is currently {status}. Checking again in 20 seconds...")
 
             elif resource_type == 'subnet':
-                response = ec2_client.describe_subnets(SubnetIds=[resource_id])
+                response = clixx_ec2_client.describe_subnets(SubnetIds=[resource_id])
                 state = response['Subnets'][0]['State']
                 if state == 'available':
                     logger.info(f"Subnet {resource_id} is now available.")
@@ -85,7 +85,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"Subnet {resource_id} is currently {state}. Checking again in 20 seconds...")
 
             elif resource_type == 'internet_gateway':
-                response = ec2_client.describe_internet_gateways(InternetGatewayIds=[resource_id])
+                response = clixx_ec2_client.describe_internet_gateways(InternetGatewayIds=[resource_id])
                 if response['InternetGateways']:
                     attachments = response['InternetGateways'][0]['Attachments']
                     attached = any(att['State'] == 'available' and att['VpcId'] == vpc_id for att in attachments)
@@ -98,7 +98,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                     logger.info(f"No Internet Gateway found with ID {resource_id}. Checking again in 20 seconds...")
 
             elif resource_type == 'nat_gateway':
-                response = ec2_client.describe_nat_gateways(NatGatewayIds=[resource_id])
+                response = clixx_ec2_client.describe_nat_gateways(NatGatewayIds=[resource_id])
                 state = response['NatGateways'][0]['State']
                 if state == 'available':
                     logger.info(f"NAT Gateway {resource_id} is now available.")
@@ -106,14 +106,14 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"NAT Gateway {resource_id} is currently {state}. Checking again in 20 seconds...")
 
             elif resource_type == 'security_group':
-                response = ec2_client.describe_security_groups(GroupIds=[resource_id])
+                response = clixx_ec2_client.describe_security_groups(GroupIds=[resource_id])
                 if response['SecurityGroups']:
                     logger.info(f"Security Group {resource_id} is available.")
                     break
                 logger.info(f"Security Group {resource_id} is not available. Checking again in 20 seconds...")
 
             elif resource_type == 'db_instance':
-                response = rds_client.describe_db_instances(DBInstanceIdentifier=resource_id)
+                response = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=resource_id)
                 state = response['DBInstances'][0]['DBInstanceStatus']
                 if state == 'available':
                     logger.info(f"RDS instance {resource_id} is now available.")
@@ -121,7 +121,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"RDS instance {resource_id} is currently {state}. Checking again in 20 seconds...")
 
             elif resource_type == 'efs':
-                response = efs_client.describe_file_systems(FileSystemId=resource_id)
+                response = clixx_efs_client.describe_file_systems(FileSystemId=resource_id)
                 state = response['FileSystems'][0]['LifeCycleState']
                 if state == 'available':
                     logger.info(f"EFS {resource_id} is now available.")
@@ -129,7 +129,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"EFS {resource_id} is currently {state}. Checking again in 20 seconds...")
 
             elif resource_type == 'load_balancer':
-                response = elbv2_client.describe_load_balancers(LoadBalancerArns=[resource_id])
+                response = clixx_elbv2_client.describe_load_balancers(LoadBalancerArns=[resource_id])
                 if response['LoadBalancers']:
                     state = response['LoadBalancers'][0]['State']['Code']
                     if state == 'active':
@@ -140,7 +140,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                     logger.info(f"Load Balancer {resource_id} is not found. Checking again in 20 seconds...")
 
             elif resource_type == 'listener':
-                response = elbv2_client.describe_listeners(ListenerArns=[resource_id])
+                response = clixx_elbv2_client.describe_listeners(ListenerArns=[resource_id])
                 if response['Listeners']:
                     logger.info(f"Listener {resource_id} is now active.")
                     break
@@ -151,7 +151,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                     logger.error("HostedZoneId (vpc_id) is None. Cannot check Route 53 records.")
                     break
                 logger.info(f"Checking records in hosted zone: {vpc_id}")
-                response = route53_client.list_resource_record_sets(HostedZoneId=vpc_id)
+                response = clixx_route53_client.list_resource_record_sets(HostedZoneId=vpc_id)
                 records = response['ResourceRecordSets']
                 if any(record['Name'] == f"{resource_id}." and record['Type'] == 'A' for record in records):
                     logger.info(f"Route 53 Record {resource_id} is now available.")
@@ -159,7 +159,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"Route 53 Record {resource_id} is not available. Checking again in 20 seconds...")
 
             elif resource_type == 'efs_mount_target':
-                response = efs_client.describe_mount_targets(FileSystemId=resource_id)
+                response = clixx_efs_client.describe_mount_targets(FileSystemId=resource_id)
                 mount_targets = response['MountTargets']
                 found_target = False
                 for mount_target in mount_targets:
@@ -176,14 +176,14 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                     logger.info(f"No EFS mount targets found for File System {resource_id}. Checking again in 20 seconds...")
 
             elif resource_type == 'launch_template':
-                response = ec2_client.describe_launch_templates(LaunchTemplateNames=[resource_id])
+                response = clixx_ec2_client.describe_launch_templates(LaunchTemplateNames=[resource_id])
                 if response['LaunchTemplates']:
                     logger.info(f"Launch Template {resource_id} is now available.")
                     break
                 logger.info(f"Launch Template {resource_id} is not available. Checking again in 20 seconds...")
 
             elif resource_type == 'auto_scaling_group':
-                response = autoscaling_client.describe_auto_scaling_groups(AutoScalingGroupNames=[resource_id])
+                response = clixx_autoscaling_client.describe_auto_scaling_groups(AutoScalingGroupNames=[resource_id])
                 asgs = response['AutoScalingGroups']
                 if asgs and asgs[0]['Status'] == 'Active':
                     logger.info(f"Auto Scaling Group {resource_id} is now active.")
@@ -191,7 +191,7 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
                 logger.info(f"Auto Scaling Group {resource_id} is not active. Checking again in 20 seconds...")
 
             elif resource_type == 'target_group':
-                response = elbv2_client.describe_target_groups(Names=[resource_id])
+                response = clixx_elbv2_client.describe_target_groups(Names=[resource_id])
                 if response['TargetGroups']:
                     logger.info(f"Target Group {resource_id} is now available.")
                     break
@@ -201,6 +201,8 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
 
         except ClientError as e:
             logger.error(f"Error describing {resource_type} {resource_id}: {e}")
+            time.sleep(20)
+
             time.sleep(20)
 
 # Variables
