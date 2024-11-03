@@ -1,11 +1,162 @@
 #!/usr/bin/env python3
 import boto3, botocore, base64, time
 
+from botocore.exceptions import ClientError
+
 import logging
 
 # Set up logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
+
+def wait_for_resource(resource_type, resource_id, vpc_id=None):
+    logger.info(f"Checking the status of {resource_type} {resource_id}...")
+    while True:
+        try:
+            if resource_type == 'vpc':
+                response = ec2_client.describe_vpcs(VpcIds=[resource_id])
+                state = response['Vpcs'][0]['State']
+                if state == 'available':
+                    logger.info(f"VPC {resource_id} is now available.")
+                    break
+                logger.info(f"VPC {resource_id} is currently {state}. Checking again in 20 seconds...")
+            
+            elif resource_type == 'db_subnet_group':
+                response = rds_client.describe_db_subnet_groups(DBSubnetGroupName=resource_id)
+                db_subnet_group = response['DBSubnetGroups'][0]
+                status = db_subnet_group['SubnetGroupStatus']
+                if status == 'Complete':
+                    logger.info(f"DB Subnet Group {resource_id} is now complete.")
+                    break
+                logger.info(f"DB Subnet Group {resource_id} is currently {status}. Checking again in 20 seconds...")
+
+            elif resource_type == 'subnet':
+                response = ec2_client.describe_subnets(SubnetIds=[resource_id])
+                state = response['Subnets'][0]['State']
+                if state == 'available':
+                    logger.info(f"Subnet {resource_id} is now available.")
+                    break
+                logger.info(f"Subnet {resource_id} is currently {state}. Checking again in 20 seconds...")
+
+            elif resource_type == 'internet_gateway':
+                response = ec2_client.describe_internet_gateways(InternetGatewayIds=[resource_id])
+                if response['InternetGateways']:
+                    attachments = response['InternetGateways'][0]['Attachments']
+                    attached = any(att['State'] == 'available' and att['VpcId'] == vpc_id for att in attachments)
+                    if attached:
+                        logger.info(f"Internet Gateway {resource_id} is attached to VPC {vpc_id}.")
+                        break
+                    else:
+                        logger.info(f"Internet Gateway {resource_id} is not attached to VPC {vpc_id}. Checking again in 20 seconds...")
+                else:
+                    logger.info(f"No Internet Gateway found with ID {resource_id}. Checking again in 20 seconds...")
+
+            elif resource_type == 'nat_gateway':
+                response = ec2_client.describe_nat_gateways(NatGatewayIds=[resource_id])
+                state = response['NatGateways'][0]['State']
+                if state == 'available':
+                    logger.info(f"NAT Gateway {resource_id} is now available.")
+                    break
+                logger.info(f"NAT Gateway {resource_id} is currently {state}. Checking again in 20 seconds...")
+
+            elif resource_type == 'security_group':
+                response = ec2_client.describe_security_groups(GroupIds=[resource_id])
+                if response['SecurityGroups']:
+                    logger.info(f"Security Group {resource_id} is available.")
+                    break
+                logger.info(f"Security Group {resource_id} is not available. Checking again in 20 seconds...")
+
+            elif resource_type == 'db_instance':
+                response = rds_client.describe_db_instances(DBInstanceIdentifier=resource_id)
+                state = response['DBInstances'][0]['DBInstanceStatus']
+                if state == 'available':
+                    logger.info(f"RDS instance {resource_id} is now available.")
+                    break
+                logger.info(f"RDS instance {resource_id} is currently {state}. Checking again in 20 seconds...")
+
+            elif resource_type == 'efs':
+                response = efs_client.describe_file_systems(FileSystemId=resource_id)
+                state = response['FileSystems'][0]['LifeCycleState']
+                if state == 'available':
+                    logger.info(f"EFS {resource_id} is now available.")
+                    break
+                logger.info(f"EFS {resource_id} is currently {state}. Checking again in 20 seconds...")
+
+            elif resource_type == 'load_balancer':
+                response = elbv2_client.describe_load_balancers(LoadBalancerArns=[resource_id])
+                if response['LoadBalancers']:
+                    state = response['LoadBalancers'][0]['State']['Code']
+                    if state == 'active':
+                        logger.info(f"Load Balancer {resource_id} is now active.")
+                        break
+                    logger.info(f"Load Balancer {resource_id} is currently {state}. Checking again in 20 seconds...")
+                else:
+                    logger.info(f"Load Balancer {resource_id} is not found. Checking again in 20 seconds...")
+
+            elif resource_type == 'listener':
+                response = elbv2_client.describe_listeners(ListenerArns=[resource_id])
+                if response['Listeners']:
+                    logger.info(f"Listener {resource_id} is now active.")
+                    break
+                logger.info(f"Listener {resource_id} is not active. Checking again in 20 seconds...")
+
+            elif resource_type == 'route53_record':
+                if vpc_id is None:
+                    logger.error("HostedZoneId (vpc_id) is None. Cannot check Route 53 records.")
+                    break
+                logger.info(f"Checking records in hosted zone: {vpc_id}")
+                response = route53_client.list_resource_record_sets(HostedZoneId=vpc_id)
+                records = response['ResourceRecordSets']
+                if any(record['Name'] == f"{resource_id}." and record['Type'] == 'A' for record in records):
+                    logger.info(f"Route 53 Record {resource_id} is now available.")
+                    break
+                logger.info(f"Route 53 Record {resource_id} is not available. Checking again in 20 seconds...")
+
+            elif resource_type == 'efs_mount_target':
+                response = efs_client.describe_mount_targets(FileSystemId=resource_id)
+                mount_targets = response['MountTargets']
+                found_target = False
+                for mount_target in mount_targets:
+                    mount_target_id = mount_target['MountTargetId']
+                    state = mount_target['LifeCycleState']
+                    subnet_id = mount_target['SubnetId']
+                    if state == 'available':
+                        logger.info(f"EFS Mount Target {mount_target_id} for File System {resource_id} is now available in subnet {subnet_id}.")
+                        return
+                    else:
+                        logger.info(f"EFS Mount Target {mount_target_id} for File System {resource_id} is not available in subnet {subnet_id}. Checking again in 20 seconds...")
+                        found_target = True
+                if not found_target:
+                    logger.info(f"No EFS mount targets found for File System {resource_id}. Checking again in 20 seconds...")
+
+            elif resource_type == 'launch_template':
+                response = ec2_client.describe_launch_templates(LaunchTemplateNames=[resource_id])
+                if response['LaunchTemplates']:
+                    logger.info(f"Launch Template {resource_id} is now available.")
+                    break
+                logger.info(f"Launch Template {resource_id} is not available. Checking again in 20 seconds...")
+
+            elif resource_type == 'auto_scaling_group':
+                response = autoscaling_client.describe_auto_scaling_groups(AutoScalingGroupNames=[resource_id])
+                asgs = response['AutoScalingGroups']
+                if asgs and asgs[0]['Status'] == 'Active':
+                    logger.info(f"Auto Scaling Group {resource_id} is now active.")
+                    break
+                logger.info(f"Auto Scaling Group {resource_id} is not active. Checking again in 20 seconds...")
+
+            elif resource_type == 'target_group':
+                response = elbv2_client.describe_target_groups(Names=[resource_id])
+                if response['TargetGroups']:
+                    logger.info(f"Target Group {resource_id} is now available.")
+                    break
+                logger.info(f"Target Group {resource_id} is not available. Checking again in 20 seconds...")
+
+            time.sleep(20)
+
+        except ClientError as e:
+            logger.error(f"Error describing {resource_type} {resource_id}: {e}")
+            time.sleep(20)
+
 
 # Assume Role to interact with AWS resources
 clixx_sts_client = boto3.client('sts')
@@ -79,6 +230,7 @@ if not clixx_vpcs['Vpcs']:
     clixx_ec2_client.modify_vpc_attribute(VpcId=clixx_vpc.id, EnableDnsSupport={'Value': True})
     clixx_ec2_client.modify_vpc_attribute(VpcId=clixx_vpc.id, EnableDnsHostnames={'Value': True})
     logger.info(f"VPC created: {clixx_vpc.id} with Name tag 'CLIXXSTACKVPC'")
+    wait_for_resource('vpc', clixx_vpc.id)
 else:
     logger.info(f"VPC already exists with CIDR block {clixx_vpc_cidr_block}")
 clixx_vpc_id = clixx_vpcs['Vpcs'][0]['VpcId'] if clixx_vpcs['Vpcs'] else clixx_vpc.id
@@ -89,6 +241,7 @@ if not clixx_subnets_1['Subnets']:
     clixx_subnet_1 = clixx_ec2_client.create_subnet(CidrBlock=clixx_public_subnet_cidr_block_1, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "a")
     clixx_ec2_client.create_tags(Resources=[clixx_subnet_1['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPUBSUB"}])
     logger.info(f"Public Subnet 1 created: {clixx_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB'")
+    wait_for_resource('subnet', clixx_subnet_1['Subnet']['SubnetId'])
 else:
     logger.info(f"Public Subnet 1 already exists with CIDR block {clixx_public_subnet_cidr_block_1}")
 clixx_subnet_1_id = clixx_subnets_1['Subnets'][0]['SubnetId'] if clixx_subnets_1['Subnets'] else clixx_subnet_1['Subnet']['SubnetId']
@@ -98,6 +251,7 @@ if not clixx_subnets_2['Subnets']:
     clixx_subnet_2 = clixx_ec2_client.create_subnet(CidrBlock=clixx_public_subnet_cidr_block_2, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "b")
     clixx_ec2_client.create_tags(Resources=[clixx_subnet_2['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPUBSUB2"}])
     logger.info(f"Public Subnet 2 created: {clixx_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB2'")
+    wait_for_resource('subnet', clixx_subnet_2['Subnet']['SubnetId'])
 else:
     logger.info(f"Public Subnet 2 already exists with CIDR block {clixx_public_subnet_cidr_block_2}")
 clixx_subnet_2_id = clixx_subnets_2['Subnets'][0]['SubnetId'] if clixx_subnets_2['Subnets'] else clixx_subnet_2['Subnet']['SubnetId']
@@ -107,6 +261,7 @@ if not clixx_private_subnets_1['Subnets']:
     clixx_private_subnet_1 = clixx_ec2_client.create_subnet(CidrBlock=clixx_private_subnet_cidr_block_1, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "a")
     clixx_ec2_client.create_tags(Resources=[clixx_private_subnet_1['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPRIVSUB1"}])
     logger.info(f"Private Subnet 1 created: {clixx_private_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB1'")
+    wait_for_resource('subnet', clixx_private_subnet_1['Subnet']['SubnetId'])
 else:
     logger.info(f"Private Subnet 1 already exists with CIDR block {clixx_private_subnet_cidr_block_1}")
 clixx_private_subnet_1_id = clixx_private_subnets_1['Subnets'][0]['SubnetId'] if clixx_private_subnets_1['Subnets'] else clixx_private_subnet_1['Subnet']['SubnetId']
@@ -116,6 +271,7 @@ if not clixx_private_subnets_2['Subnets']:
     clixx_private_subnet_2 = clixx_ec2_client.create_subnet(CidrBlock=clixx_private_subnet_cidr_block_2, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "b")
     clixx_ec2_client.create_tags(Resources=[clixx_private_subnet_2['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPRIVSUB2"}])
     logger.info(f"Private Subnet 2 created: {clixx_private_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB2'")
+    wait_for_resource('subnet', clixx_private_subnet_2['Subnet']['SubnetId'])
 else:
     logger.info(f"Private Subnet 2 already exists with CIDR block {clixx_private_subnet_cidr_block_2}")
 clixx_private_subnet_2_id = clixx_private_subnets_2['Subnets'][0]['SubnetId'] if clixx_private_subnets_2['Subnets'] else clixx_private_subnet_2['Subnet']['SubnetId']
@@ -127,6 +283,7 @@ if not clixx_igw_list:
     clixx_ec2_client.attach_internet_gateway(VpcId=clixx_vpc_id, InternetGatewayId=clixx_igw.id)
     clixx_ec2_client.create_tags(Resources=[clixx_igw.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKIGW'}])
     logger.info(f"Internet Gateway created: {clixx_igw.id} with Name tag 'CLIXXSTACKIGW'")
+    wait_for_resource('internet_gateway', clixx_igw.id, vpc_id=clixx_vpc_id)
 else:
     clixx_igw = clixx_igw_list[0]
     logger.info(f"Internet Gateway already exists with ID {clixx_igw.id}")
@@ -264,6 +421,7 @@ else:
         Tags=[{'Key': 'Name', 'Value': 'wordpressdbclixx'}]
     )
     logger.info(f"Restore operation initiated. Response: {clixx_response}")
+    wait_for_resource('db_instance', clixx_db_instance_identifier)
 
 # --- Create EFS file system ---
 clixx_efs_response = clixx_efs_client.describe_file_systems(
@@ -282,6 +440,7 @@ else:
     )
     clixx_file_system_id = clixx_efs_response['FileSystemId']
     logger.info(f"EFS created with FileSystemId: {clixx_file_system_id}")
+    wait_for_resource('efs', clixx_file_system_id)
 
 # Wait until the EFS file system is in 'available' state
 while True:
@@ -316,6 +475,7 @@ for clixx_private_subnet_id in clixx_private_subnet_ids:
             SecurityGroups=[clixx_private_sg.id]
         )
         logger.info(f"Mount target created in Private Subnet: {clixx_private_subnet_id}")
+        wait_for_resource('efs_mount_target', clixx_file_system_id)
     else:
         logger.info(f"Mount target already exists in Private Subnet: {clixx_private_subnet_id}")
 
@@ -400,6 +560,7 @@ if clixx_load_balancer_arn is None:
     )
     clixx_load_balancer_arn = clixx_load_balancer['LoadBalancers'][0]['LoadBalancerArn']
     logger.info(f"Load Balancer created with ARN: {clixx_load_balancer_arn}")
+    wait_for_resource('load_balancer', clixx_load_balancer_arn)
 
 # Create Listener for the Load Balancer (HTTP & HTTPS)
 # Retrieve listeners for the load balancer
