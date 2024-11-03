@@ -9,6 +9,52 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
+
+# Assume Role to interact with AWS resources
+clixx_sts_client = boto3.client('sts')
+clixx_assumed_role_object = clixx_sts_client.assume_role(
+    RoleArn='arn:aws:iam::619071313311:role/Engineer',
+    RoleSessionName='mysession'
+)
+clixx_credentials = clixx_assumed_role_object['Credentials']
+
+# Create boto3 clients with assumed role credentials
+clixx_ec2_client = boto3.client('ec2', region_name="us-east-1", 
+                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
+                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
+                                aws_session_token=clixx_credentials['SessionToken'])
+
+clixx_ec2_resource = boto3.resource('ec2', region_name="us-east-1",
+                                    aws_access_key_id=clixx_credentials['AccessKeyId'],
+                                    aws_secret_access_key=clixx_credentials['SecretAccessKey'],
+                                    aws_session_token=clixx_credentials['SessionToken'])
+
+clixx_elbv2_client = boto3.client('elbv2', region_name="us-east-1", 
+                                  aws_access_key_id=clixx_credentials['AccessKeyId'], 
+                                  aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
+                                  aws_session_token=clixx_credentials['SessionToken'])
+
+clixx_rds_client = boto3.client('rds', region_name="us-east-1", 
+                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
+                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
+                                aws_session_token=clixx_credentials['SessionToken'])
+
+clixx_efs_client = boto3.client('efs', region_name="us-east-1", 
+                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
+                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
+                                aws_session_token=clixx_credentials['SessionToken'])
+
+clixx_route53_client = boto3.client('route53', 
+                                    aws_access_key_id=clixx_credentials['AccessKeyId'], 
+                                    aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
+                                    aws_session_token=clixx_credentials['SessionToken'])
+
+clixx_autoscaling_client = boto3.client('autoscaling', region_name="us-east-1", 
+                                        aws_access_key_id=clixx_credentials['AccessKeyId'], 
+                                        aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
+                                        aws_session_token=clixx_credentials['SessionToken'])
+
+
 def wait_for_resource(resource_type, resource_id, vpc_id=None):
     logger.info(f"Checking the status of {resource_type} {resource_id}...")
     while True:
@@ -156,52 +202,6 @@ def wait_for_resource(resource_type, resource_id, vpc_id=None):
         except ClientError as e:
             logger.error(f"Error describing {resource_type} {resource_id}: {e}")
             time.sleep(20)
-
-
-# Assume Role to interact with AWS resources
-clixx_sts_client = boto3.client('sts')
-clixx_assumed_role_object = clixx_sts_client.assume_role(
-    RoleArn='arn:aws:iam::619071313311:role/Engineer',
-    RoleSessionName='mysession'
-)
-clixx_credentials = clixx_assumed_role_object['Credentials']
-
-# Create boto3 clients with assumed role credentials
-clixx_ec2_client = boto3.client('ec2', region_name="us-east-1", 
-                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_ec2_resource = boto3.resource('ec2', region_name="us-east-1",
-                                    aws_access_key_id=clixx_credentials['AccessKeyId'],
-                                    aws_secret_access_key=clixx_credentials['SecretAccessKey'],
-                                    aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_elbv2_client = boto3.client('elbv2', region_name="us-east-1", 
-                                  aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                  aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                  aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_rds_client = boto3.client('rds', region_name="us-east-1", 
-                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_efs_client = boto3.client('efs', region_name="us-east-1", 
-                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_route53_client = boto3.client('route53', 
-                                    aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                    aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                    aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_autoscaling_client = boto3.client('autoscaling', region_name="us-east-1", 
-                                        aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                        aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                        aws_session_token=clixx_credentials['SessionToken'])
-
 
 # Variables
 clixx_vpc_cidr_block = "10.0.0.0/16"
