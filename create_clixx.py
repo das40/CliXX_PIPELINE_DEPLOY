@@ -177,6 +177,69 @@ private_sg_id = create_security_group(
 )
 
 logger.info("Security groups created and configured.")
+# --- RDS Subnet Group ---
+clixx_DBSubnetGroupName = 'CLIXXSTACKDBSUBNETGROUP'
+clixx_response = clixx_rds_client.describe_db_subnet_groups()
+clixx_db_subnet_group_exists = False
+
+for clixx_subnet_group in clixx_response['DBSubnetGroups']:
+    if clixx_subnet_group['DBSubnetGroupName'] == clixx_DBSubnetGroupName:
+        clixx_db_subnet_group_exists = True
+        clixx_DBSubnetGroupName = clixx_subnet_group['DBSubnetGroupName']
+        logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' already exists. Proceeding with the existing one.")
+        break
+
+if not clixx_db_subnet_group_exists:
+    clixx_response = clixx_rds_client.create_db_subnet_group(
+        DBSubnetGroupName=clixx_DBSubnetGroupName,
+        SubnetIds=[clixx_private_subnet_1_id, clixx_private_subnet_2_id],
+        DBSubnetGroupDescription='My stack DB subnet group',
+        Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKDBSUBNETGROUP'}]
+    )
+    clixx_DBSubnetGroupName = clixx_response['DBSubnetGroup']['DBSubnetGroupName']
+    logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' created successfully.")
+
+# --- Check if the RDS snapshot is available ---
+try:
+    snapshot_response = clixx_rds_client.describe_db_snapshots(DBSnapshotIdentifier=clixx_db_snapshot_identifier)
+    snapshot_status = snapshot_response['DBSnapshots'][0]['Status']
+    if snapshot_status != 'available':
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is in '{snapshot_status}' state. Waiting for it to become 'available'...")
+        while snapshot_status != 'available':
+            time.sleep(30)  # Wait 30 seconds before checking again
+            snapshot_response = clixx_rds_client.describe_db_snapshots(DBSnapshotIdentifier=clixx_db_snapshot_identifier)
+            snapshot_status = snapshot_response['DBSnapshots'][0]['Status']
+            logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' current state: '{snapshot_status}'")
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is now 'available'. Proceeding with the restore.")
+    else:
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is 'available'. Proceeding with the restore.")
+except ClientError as e:
+    logger.error(f"Failed to describe snapshot '{clixx_db_snapshot_identifier}': {e}")
+    raise
+
+# --- Restore RDS Instance from Snapshot ---
+clixx_db_instances = clixx_rds_client.describe_db_instances()
+clixx_db_instance_identifiers = [db['DBInstanceIdentifier'] for db in clixx_db_instances['DBInstances']]
+
+if clixx_db_instance_identifier in clixx_db_instance_identifiers:
+    clixx_instances = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=clixx_db_instance_identifier)
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' already exists. Details: {clixx_instances}")
+else:
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' not found. Restoring from snapshot...")
+    try:
+        clixx_response = clixx_rds_client.restore_db_instance_from_db_snapshot(
+            DBInstanceIdentifier=clixx_db_instance_identifier,
+            DBSnapshotIdentifier=clixx_db_snapshot_identifier,
+            DBInstanceClass=clixx_db_instance_class,
+            VpcSecurityGroupIds=[clixx_private_sg_id],
+            DBSubnetGroupName=clixx_DBSubnetGroupName,
+            PubliclyAccessible=False,
+            Tags=[{'Key': 'Name', 'Value': 'wordpressdbclixx'}]
+        )
+        logger.info(f"Restore operation initiated. Response: {clixx_response}")
+    except ClientError as e:
+        logger.error(f"Failed to restore DB Instance '{clixx_db_instance_identifier}': {e}")
+        raise
 
 # --- Deploy Bastion Host in Public Subnet ---
 bastion_instance = ec2_resource.create_instances(
@@ -201,6 +264,8 @@ bastion_instance = ec2_resource.create_instances(
     ]
 )
 logger.info(f"Bastion host deployed: Instance ID {bastion_instance[0].id}")
+
+
 
 # --- Create Load Balancer ---
 elb_client = boto3.client('elbv2', region_name='us-east-1',
@@ -225,31 +290,6 @@ logger.info("Deployment of VPC, subnets, route tables, security groups, bastion 
 
 # --- Security Groups and Additional Components ---
 
-
-# --- Deploy Bastion Host in Public Subnet ---
-bastion_instance = ec2_resource.create_instances(
-    ImageId='ami-00f251754ac5da7f0',  # Replace with the latest Linux AMI ID
-    InstanceType='t2.micro',
-    KeyName='bastionkey.pem',
-    MinCount=1,
-    MaxCount=1,
-    NetworkInterfaces=[
-        {
-            'SubnetId': public_subnet_ids[0],
-            'DeviceIndex': 0,
-            'AssociatePublicIpAddress': True,
-            'Groups': [public_sg_id]
-        }
-    ],
-    TagSpecifications=[
-        {
-            'ResourceType': 'instance',
-            'Tags': [{'Key': 'Name', 'Value': 'CLIXX-BastionHost'}]
-        }
-    ]
-)
-logger.info(f"Bastion host deployed: Instance ID {bastion_instance[0].id}")
-
 # Create EFS file system
 efs_client = boto3.client('efs', region_name='us-east-1',
                          aws_access_key_id=credentials['AccessKeyId'],
@@ -263,6 +303,18 @@ efs_response = efs_client.create_file_system(
 )
 efs_id = efs_response['FileSystemId']
 logger.info(f"EFS created with ID: {efs_id}")
+
+# Wait for EFS to be in 'available' state
+while True:
+    clixx_efs_info = clixx_efs_client.describe_file_systems(FileSystemId=clixx_file_system_id)
+    lifecycle_state = clixx_efs_info['FileSystems'][0]['LifeCycleState']
+    if lifecycle_state == 'available':
+        logger.info(f"EFS CLiXX-EFS is now available with FileSystemId: {clixx_file_system_id}")
+        break
+    else:
+        logger.info(f"EFS is in '{lifecycle_state}' state. Waiting for it to become available...")
+        time.sleep(10)
+
 
 # Create mount targets for each private subnet
 for subnet_id in private_subnet_ids_az1[:2]:  # Adjust the range or subnets as necessary
