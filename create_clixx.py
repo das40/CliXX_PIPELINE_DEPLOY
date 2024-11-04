@@ -230,26 +230,21 @@ private_sg_id = create_security_group(
 clixx_private_sg_id = private_sg_id  # Assign to ensure clixx_private_sg_id is defined globally
 
 
-# --- RDS Subnet Group ---
+# Create DB Subnet Group if it does not exist
 clixx_DBSubnetGroupName = 'CLIXXSTACKDBSUBNETGROUP'
-clixx_response = clixx_rds_client.describe_db_subnet_groups()
-clixx_db_subnet_group_exists = False
+all_private_subnet_ids = clixx_private_subnet_ids_az1 + clixx_private_subnet_ids_az2  # Combine all private subnets
 
-for clixx_subnet_group in clixx_response['DBSubnetGroups']:
-    if clixx_subnet_group['DBSubnetGroupName'] == clixx_DBSubnetGroupName:
-        clixx_db_subnet_group_exists = True
-        clixx_DBSubnetGroupName = clixx_subnet_group['DBSubnetGroupName']
-        logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' already exists. Proceeding with the existing one.")
-        break
-
-if not clixx_db_subnet_group_exists:
+try:
+    clixx_rds_client.describe_db_subnet_groups(DBSubnetGroupName=clixx_DBSubnetGroupName)
+    logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' already exists.")
+except clixx_rds_client.exceptions.DBSubnetGroupNotFoundFault:
+    logger.info(f"Creating DB Subnet Group '{clixx_DBSubnetGroupName}'.")
     clixx_response = clixx_rds_client.create_db_subnet_group(
         DBSubnetGroupName=clixx_DBSubnetGroupName,
-        SubnetIds=[clixx_private_subnet_1_id, clixx_private_subnet_2_id],
+        SubnetIds=all_private_subnet_ids,
         DBSubnetGroupDescription='My stack DB subnet group',
         Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKDBSUBNETGROUP'}]
     )
-    clixx_DBSubnetGroupName = clixx_response['DBSubnetGroup']['DBSubnetGroupName']
     logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' created successfully.")
 
 # --- Check if the RDS snapshot is available ---
@@ -574,6 +569,12 @@ clixx_user_data_base64 = base64.b64encode(clixx_user_data_script.encode('utf-8')
 
 # --- Create Launch Template ---
 # List all launch templates and check for 'CLiXX-LT'
+# Assign the first public subnet ID to clixx_subnet_1_id
+clixx_subnet_1_id = clixx_public_subnet_ids[0]
+
+# Assign the public security group ID to clixx_public_sg_id
+clixx_public_sg_id = public_sg_id
+
 clixx_all_lt_response = clixx_ec2_client.describe_launch_templates()
 clixx_launch_template_names = [lt['LaunchTemplateName'] for lt in clixx_all_lt_response['LaunchTemplates']]
 
