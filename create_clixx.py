@@ -248,6 +248,9 @@ except clixx_rds_client.exceptions.DBSubnetGroupNotFoundFault:
     logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' created successfully.")
 
 # --- Check if the RDS snapshot is available ---
+# Define the DB instance identifier
+clixx_db_instance_identifier = 'wordpressdbclixx'  # Replace with your actual DB instance name
+
 try:
     snapshot_response = clixx_rds_client.describe_db_snapshots(DBSnapshotIdentifier=clixx_db_snapshot_identifier)
     snapshot_status = snapshot_response['DBSnapshots'][0]['Status']
