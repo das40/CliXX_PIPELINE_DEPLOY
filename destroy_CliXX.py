@@ -71,6 +71,30 @@ def retry_deletion(delete_func, retry_limit=3):
             else:
                 raise e
 
+# Delete all instances in the VPC (e.g., bastion server)
+try:
+    instances = clixx_ec2_client.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [clixx_vpc_id]}])['Reservations']
+    for reservation in instances:
+        for instance in reservation['Instances']:
+            instance_id = instance['InstanceId']
+            clixx_ec2_client.terminate_instances(InstanceIds=[instance_id])
+            logger.info(f"Instance '{instance_id}' termination initiated.")
+    time.sleep(10)  # Wait for instances to terminate
+except ClientError as e:
+    logger.error(f"Failed to delete instances: {e}")
+
+# Release Elastic IPs
+try:
+    addresses = clixx_ec2_client.describe_addresses()['Addresses']
+    for address in addresses:
+        if 'AssociationId' in address:
+            clixx_ec2_client.disassociate_address(AssociationId=address['AssociationId'])
+            logger.info(f"Elastic IP '{address['PublicIp']}' disassociated.")
+        clixx_ec2_client.release_address(AllocationId=address['AllocationId'])
+        logger.info(f"Elastic IP '{address['PublicIp']}' released.")
+except ClientError as e:
+    logger.error(f"Failed to release Elastic IPs: {e}")
+
 # Delete Auto Scaling Group
 try:
     response = clixx_autoscaling_client.describe_auto_scaling_groups(
@@ -95,8 +119,6 @@ try:
             LaunchTemplateName=clixx_launch_template_name
         )
         logger.info(f"Launch Template '{clixx_launch_template_name}' deleted.")
-    else:
-        logger.info(f"Launch Template '{clixx_launch_template_name}' not found, skipping.")
 except ClientError as e:
     logger.error(f"Failed to delete Launch Template: {e}")
 
@@ -107,8 +129,6 @@ try:
         clixx_elbv2_client.delete_load_balancer(LoadBalancerArn=response['LoadBalancers'][0]['LoadBalancerArn'])
         logger.info(f"Load Balancer '{clixx_lb_name}' deleted.")
         time.sleep(30)  # Wait for LB to delete
-    else:
-        logger.info(f"Load Balancer '{clixx_lb_name}' not found, skipping.")
 except ClientError as e:
     logger.error(f"Failed to delete Load Balancer: {e}")
 
@@ -118,8 +138,6 @@ try:
     if response['TargetGroups']:
         clixx_elbv2_client.delete_target_group(TargetGroupArn=response['TargetGroups'][0]['TargetGroupArn'])
         logger.info(f"Target Group '{clixx_target_group_name}' deleted.")
-    else:
-        logger.info(f"Target Group '{clixx_target_group_name}' not found, skipping.")
 except ClientError as e:
     logger.error(f"Failed to delete Target Group: {e}")
 
@@ -132,8 +150,6 @@ try:
             SkipFinalSnapshot=True
         )
         logger.info(f"RDS Instance '{clixx_db_instance_identifier}' deletion initiated.")
-    else:
-        logger.info(f"RDS Instance '{clixx_db_instance_identifier}' not found, skipping.")
 except ClientError as e:
     logger.error(f"Failed to delete RDS Instance: {e}")
 
@@ -143,8 +159,6 @@ try:
     if response['DBSubnetGroups']:
         clixx_rds_client.delete_db_subnet_group(DBSubnetGroupName=clixx_DBSubnetGroupName)
         logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' deleted.")
-    else:
-        logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' not found, skipping.")
 except ClientError as e:
     logger.error(f"Failed to delete DB Subnet Group: {e}")
 
@@ -160,7 +174,7 @@ try:
 except ClientError as e:
     logger.error(f"Failed to delete EFS or its mount targets: {e}")
 
-# Delete Route 53 Record
+# Delete Route 53 record
 try:
     response = clixx_route53_client.list_resource_record_sets(HostedZoneId=clixx_hosted_zone_id)
     for record in response['ResourceRecordSets']:
@@ -187,12 +201,10 @@ for sg_name in clixx_security_groups:
         if response['SecurityGroups']:
             clixx_ec2_client.delete_security_group(GroupId=response['SecurityGroups'][0]['GroupId'])
             logger.info(f"Security Group '{sg_name}' deleted.")
-        else:
-            logger.info(f"Security Group '{sg_name}' not found, skipping.")
     except ClientError as e:
         logger.error(f"Failed to delete Security Group '{sg_name}': {e}")
 
-# Delete Internet Gateways
+# Delete Internet Gateway
 try:
     igws = clixx_ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [clixx_vpc_id]}])
     for igw in igws['InternetGateways']:
@@ -212,19 +224,17 @@ try:
 except ClientError as e:
     logger.error(f"Failed to delete NAT Gateways: {e}")
 
-# Delete Route Tables (excluding main route table)
+# Delete Route Tables
 try:
     route_tables = clixx_ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [clixx_vpc_id]}])
     for rt in route_tables['RouteTables']:
-        associations = rt.get('Associations', [])
-        main_route_table = any([assoc['Main'] for assoc in associations])
-        if not main_route_table:
+        if not any(assoc.get('Main') for assoc in rt.get('Associations', [])):  # Skip main route table
             clixx_ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
             logger.info(f"Route Table '{rt['RouteTableId']}' deleted.")
 except ClientError as e:
     logger.error(f"Failed to delete Route Tables: {e}")
 
-# Delete remaining Subnets (retry in case of dependencies)
+# Delete remaining Subnets
 for _ in range(3):  # Retry loop
     try:
         subnets = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [clixx_vpc_id]}])
