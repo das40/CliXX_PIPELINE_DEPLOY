@@ -65,6 +65,7 @@ try:
             ForceDelete=True
         )
         logger.info(f"Auto Scaling Group '{clixx_auto_scaling_group_name}' deleted.")
+        time.sleep(30)  # Ensure ASG deletion completes
 except ClientError as e:
     logger.error(f"Failed to delete Auto Scaling Group: {e}")
 
@@ -109,6 +110,9 @@ try:
             SkipFinalSnapshot=True
         )
         logger.info(f"RDS Instance '{clixx_db_instance_identifier}' deletion initiated.")
+        # Wait until the RDS instance is deleted
+        waiter = clixx_rds_client.get_waiter('db_instance_deleted')
+        waiter.wait(DBInstanceIdentifier=clixx_db_instance_identifier)
 except ClientError as e:
     logger.error(f"Failed to delete RDS Instance: {e}")
 
@@ -121,11 +125,19 @@ try:
 except ClientError as e:
     logger.error(f"Failed to delete DB Subnet Group: {e}")
 
+# Delete EFS Mount Targets
+try:
+    response = clixx_efs_client.describe_mount_targets(FileSystemId=clixx_efs_name)
+    for mount_target in response['MountTargets']:
+        clixx_efs_client.delete_mount_target(MountTargetId=mount_target['MountTargetId'])
+        logger.info(f"EFS Mount Target '{mount_target['MountTargetId']}' deleted.")
+    time.sleep(5)  # Give time for mount targets to be fully deleted
+except ClientError as e:
+    logger.error(f"Failed to delete EFS mount targets: {e}")
+
 # Delete EFS
 try:
-    response = clixx_efs_client.describe_file_systems(
-        CreationToken=clixx_efs_name
-    )
+    response = clixx_efs_client.describe_file_systems(CreationToken=clixx_efs_name)
     if response['FileSystems']:
         clixx_efs_client.delete_file_system(FileSystemId=response['FileSystems'][0]['FileSystemId'])
         logger.info(f"EFS '{clixx_efs_name}' deleted.")
@@ -171,3 +183,12 @@ try:
         logger.info(f"Subnet '{subnet['Tags'][0]['Value']}' with ID '{subnet_id}' deleted.")
 except ClientError as e:
     logger.error(f"Failed to delete subnets: {e}")
+
+# Delete VPC
+try:
+    response = clixx_ec2_client.describe_vpcs(Filters=[{'Name': 'tag:Name', 'Values': [clixx_vpc_name]}])
+    if response['Vpcs']:
+        clixx_ec2_client.delete_vpc(VpcId=response['Vpcs'][0]['VpcId'])
+        logger.info(f"VPC '{clixx_vpc_name}' deleted.")
+except ClientError as e:
+    logger.error(f"Failed to delete VPC: {e}")
