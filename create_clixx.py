@@ -212,10 +212,15 @@ public_sg_id = create_security_group(
     clixx_vpc_id,
     ingress_rules=[
         {'IpProtocol': 'tcp', 'FromPort': 22, 'ToPort': 22, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
-        {'IpProtocol': 'tcp', 'FromPort': 80, 'ToPort': 80, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
-        {'IpProtocol': 'tcp', 'FromPort': 443, 'ToPort': 443, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
-    ]
+            {'IpProtocol': 'tcp', 'FromPort': 80, 'ToPort': 80, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
+            {'IpProtocol': 'tcp', 'FromPort': 443, 'ToPort': 443, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
+            {'IpProtocol': 'tcp', 'FromPort': 2049, 'ToPort': 2049, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
+            {'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
+            {'IpProtocol': 'icmp', 'FromPort': -1, 'ToPort': -1, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+        ]
 )
+clixx_public_sg_id = public_sg_id  # Assign to a global variable for consistency
+
 
 # Create private security group
 private_sg_id = create_security_group(
@@ -223,6 +228,7 @@ private_sg_id = create_security_group(
     'Private security group for database and EFS access',
     clixx_vpc_id,
     ingress_rules=[
+        {'IpProtocol': 'tcp', 'FromPort': 22, 'ToPort': 22, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
         {'IpProtocol': 'tcp', 'FromPort': 2049, 'ToPort': 2049, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
         {'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}
     ]
@@ -602,9 +608,10 @@ else:
                 'AssociatePublicIpAddress': True,
                 'DeviceIndex': 0,
                 'SubnetId': clixx_subnet_1_id,
-                'Groups': [clixx_public_sg.id]
+                'Groups': [clixx_public_sg_id]  # Use the defined variable      
             }]
-        }
+                
+        }               
     )
     clixx_launch_template_id = clixx_launch_template['LaunchTemplate']['LaunchTemplateId']
     logger.info(f"Launch Template created with ID: {clixx_launch_template_id}")
