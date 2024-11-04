@@ -432,8 +432,8 @@ try:
                         'Name': clixx_record_name,
                         'Type': 'A',
                         'AliasTarget': {
-                            'HostedZoneId': clixx_load_response['LoadBalancers'][0]['CanonicalHostedZoneId'],
-                            'DNSName': clixx_load_response['LoadBalancers'][0]['DNSName'],
+                            'HostedZoneId': clixx_lb_response['LoadBalancers'][0]['CanonicalHostedZoneId'],
+                            'DNSName': clixx_lb_response['LoadBalancers'][0]['DNSName'],
                             'EvaluateTargetHealth': False
                         }
                     }
