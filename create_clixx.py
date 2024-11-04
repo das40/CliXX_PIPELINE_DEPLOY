@@ -416,6 +416,41 @@ clixx_lb_response = clixx_elbv2_client.create_load_balancer(
 clixx_lb_arn = clixx_lb_response['LoadBalancers'][0]['LoadBalancerArn']
 logger.info(f"Load Balancer created with ARN: {clixx_lb_arn}")
 
+# --- Create HTTP Listener for Load Balancer ---
+try:
+    clixx_http_listener_response = clixx_elbv2_client.create_listener(
+        LoadBalancerArn=clixx_lb_arn,
+        Protocol='HTTP',
+        Port=80,
+        DefaultActions=[{
+            'Type': 'forward',
+            'TargetGroupArn': clixx_target_group_arn
+        }]
+    )
+    logger.info(f"HTTP Listener created for Load Balancer with ARN: {clixx_http_listener_response['Listeners'][0]['ListenerArn']}")
+except ClientError as e:
+    logger.error(f"Failed to create HTTP listener for Load Balancer: {e}")
+    raise
+
+# --- Create HTTPS Listener for Load Balancer ---
+try:
+    clixx_https_listener_response = clixx_elbv2_client.create_listener(
+        LoadBalancerArn=clixx_lb_arn,
+        Protocol='HTTPS',
+        Port=443,
+        SslPolicy='ELBSecurityPolicy-2016-08',  # You can customize the SSL policy as needed
+        Certificates=[{'CertificateArn': clixx_certificate_arn}],
+        DefaultActions=[{
+            'Type': 'forward',
+            'TargetGroupArn': clixx_target_group_arn
+        }]
+    )
+    logger.info(f"HTTPS Listener created for Load Balancer with ARN: {clixx_https_listener_response['Listeners'][0]['ListenerArn']}")
+except ClientError as e:
+    logger.error(f"Failed to create HTTPS listener for Load Balancer: {e}")
+    raise
+
+
 # Create Route 53 record for the load balancer
 clixx_hosted_zone_id = 'Z0881876FFUR3OKRNM20'  # Replace with your hosted zone ID
 clixx_record_name = 'dev.clixx-dasola.com'  # Replace with your desired record name
@@ -427,7 +462,7 @@ try:
             'Comment': 'Create record for the CLiXX Load Balancer',
             'Changes': [
                 {
-                    'Action': 'CREATE',
+                    'Action': 'UPSERT',
                     'ResourceRecordSet': {
                         'Name': clixx_record_name,
                         'Type': 'A',
