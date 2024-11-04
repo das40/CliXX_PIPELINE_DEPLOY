@@ -205,6 +205,7 @@ def create_security_group(name, description, vpc_id, ingress_rules=None):
     return sg['GroupId']
 
 # Create public security group
+
 public_sg_id = create_security_group(
     'CLIXX-PublicSG',
     'Public security group for application servers',
@@ -226,6 +227,8 @@ private_sg_id = create_security_group(
         {'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}
     ]
 )
+clixx_private_sg_id = private_sg_id  # Assign to ensure clixx_private_sg_id is defined globally
+
 
 # Restore RDS from Snapshot
 clixx_db_instance_identifier = 'Wordpressdbclixx'
