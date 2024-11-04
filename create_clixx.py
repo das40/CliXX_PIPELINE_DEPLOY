@@ -120,9 +120,21 @@ else:
     clixx_igw_id = clixx_igw_response['InternetGateways'][0]['InternetGatewayId']
     logger.info(f"Internet Gateway already exists: {clixx_igw_id}")
 
+# Create an empty list to store NAT Gateway IDs
+clixx_nat_gateway_ids = []
+
+# Create NAT Gateways (one per public subnet)
+for subnet_id in clixx_public_subnet_ids:
+    eip = clixx_ec2_client.allocate_address(Domain='vpc')
+    nat_gw_response = clixx_ec2_client.create_nat_gateway(
+        SubnetId=subnet_id,
+        AllocationId=eip['AllocationId']
+    )
+    nat_gw_id = nat_gw_response['NatGateway']['NatGatewayId']
     clixx_nat_gateway_ids.append(nat_gw_id)
     logger.info(f"NAT Gateway created: {nat_gw_id}")
-    # Wait for NAT Gateway to become available
+    
+    # Wait for the NAT Gateway to become available
     while True:
         nat_gw_status = clixx_ec2_client.describe_nat_gateways(NatGatewayIds=[nat_gw_id])
         state = nat_gw_status['NatGateways'][0]['State']
@@ -133,7 +145,6 @@ else:
             logger.info(f"NAT Gateway {nat_gw_id} is currently in state '{state}'. Waiting for it to become available...")
             time.sleep(10)
 
-logger.info("All NAT Gateways created successfully.")
 # Create Route Tables and associate with subnets
 # Public route table
 clixx_pub_route_table = clixx_ec2_resource.create_route_table(VpcId=clixx_vpc_id)
