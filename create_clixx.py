@@ -230,30 +230,69 @@ private_sg_id = create_security_group(
 clixx_private_sg_id = private_sg_id  # Assign to ensure clixx_private_sg_id is defined globally
 
 
-# Restore RDS from Snapshot
-clixx_db_instance_identifier = 'Wordpressdbclixx'
-clixx_db_snapshot_identifier = 'arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot'
-clixx_db_instance_class = 'db.m6gd.large'
+# --- RDS Subnet Group ---
 clixx_DBSubnetGroupName = 'CLIXXSTACKDBSUBNETGROUP'
+clixx_response = clixx_rds_client.describe_db_subnet_groups()
+clixx_db_subnet_group_exists = False
 
-# Check if the RDS instance already exists
+for clixx_subnet_group in clixx_response['DBSubnetGroups']:
+    if clixx_subnet_group['DBSubnetGroupName'] == clixx_DBSubnetGroupName:
+        clixx_db_subnet_group_exists = True
+        clixx_DBSubnetGroupName = clixx_subnet_group['DBSubnetGroupName']
+        logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' already exists. Proceeding with the existing one.")
+        break
+
+if not clixx_db_subnet_group_exists:
+    clixx_response = clixx_rds_client.create_db_subnet_group(
+        DBSubnetGroupName=clixx_DBSubnetGroupName,
+        SubnetIds=[clixx_private_subnet_1_id, clixx_private_subnet_2_id],
+        DBSubnetGroupDescription='My stack DB subnet group',
+        Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKDBSUBNETGROUP'}]
+    )
+    clixx_DBSubnetGroupName = clixx_response['DBSubnetGroup']['DBSubnetGroupName']
+    logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' created successfully.")
+
+# --- Check if the RDS snapshot is available ---
+try:
+    snapshot_response = clixx_rds_client.describe_db_snapshots(DBSnapshotIdentifier=clixx_db_snapshot_identifier)
+    snapshot_status = snapshot_response['DBSnapshots'][0]['Status']
+    if snapshot_status != 'available':
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is in '{snapshot_status}' state. Waiting for it to become 'available'...")
+        while snapshot_status != 'available':
+            time.sleep(30)  # Wait 30 seconds before checking again
+            snapshot_response = clixx_rds_client.describe_db_snapshots(DBSnapshotIdentifier=clixx_db_snapshot_identifier)
+            snapshot_status = snapshot_response['DBSnapshots'][0]['Status']
+            logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' current state: '{snapshot_status}'")
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is now 'available'. Proceeding with the restore.")
+    else:
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is 'available'. Proceeding with the restore.")
+except ClientError as e:
+    logger.error(f"Failed to describe snapshot '{clixx_db_snapshot_identifier}': {e}")
+    raise
+
+# --- Restore RDS Instance from Snapshot ---
 clixx_db_instances = clixx_rds_client.describe_db_instances()
 clixx_db_instance_identifiers = [db['DBInstanceIdentifier'] for db in clixx_db_instances['DBInstances']]
+
 if clixx_db_instance_identifier in clixx_db_instance_identifiers:
-    logger.info(f"DB Instance '{clixx_db_instance_identifier}' already exists.")
+    clixx_instances = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=clixx_db_instance_identifier)
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' already exists. Details: {clixx_instances}")
 else:
-    # Restore the DB instance from the snapshot
-    logger.info(f"Restoring DB Instance '{clixx_db_instance_identifier}' from snapshot.")
-    clixx_response = clixx_rds_client.restore_db_instance_from_db_snapshot(
-        DBInstanceIdentifier=clixx_db_instance_identifier,
-        DBSnapshotIdentifier=clixx_db_snapshot_identifier,
-        DBInstanceClass=clixx_db_instance_class,
-        VpcSecurityGroupIds=[clixx_private_sg_id],
-        DBSubnetGroupName=clixx_DBSubnetGroupName,
-        PubliclyAccessible=False,
-        Tags=[{'Key': 'Name', 'Value': 'wordpressdbclixx'}]
-    )
-    logger.info(f"DB Instance '{clixx_db_instance_identifier}' restore initiated.")
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' not found. Restoring from snapshot...")
+    try:
+        clixx_response = clixx_rds_client.restore_db_instance_from_db_snapshot(
+            DBInstanceIdentifier=clixx_db_instance_identifier,
+            DBSnapshotIdentifier=clixx_db_snapshot_identifier,
+            DBInstanceClass=clixx_db_instance_class,
+            VpcSecurityGroupIds=[clixx_private_sg_id],
+            DBSubnetGroupName=clixx_DBSubnetGroupName,
+            PubliclyAccessible=False,
+            Tags=[{'Key': 'Name', 'Value': 'wordpressdbclixx'}]
+        )
+        logger.info(f"Restore operation initiated. Response: {clixx_response}")
+    except ClientError as e:
+        logger.error(f"Failed to restore DB Instance '{clixx_db_instance_identifier}': {e}")
+        raise
 
 # --- Create EFS file system ---
 clixx_efs_response = clixx_efs_client.describe_file_systems(
