@@ -1,632 +1,341 @@
-#!/usr/bin/env python3
-import boto3, botocore, base64, time
-
-from botocore.exceptions import ClientError
-
+import boto3
 import logging
+import time, base64, time
+from botocore.exceptions import ClientError
 
 # Set up logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
-
-# Assume Role to interact with AWS resources
-clixx_sts_client = boto3.client('sts')
-clixx_assumed_role_object = clixx_sts_client.assume_role(
+# Assume role (already part of your existing code)
+sts_client = boto3.client('sts')
+assumed_role_object = sts_client.assume_role(
     RoleArn='arn:aws:iam::619071313311:role/Engineer',
     RoleSessionName='mysession'
 )
-clixx_credentials = clixx_assumed_role_object['Credentials']
+credentials = assumed_role_object['Credentials']
 
-# Create boto3 clients with assumed role credentials
-clixx_ec2_client = boto3.client('ec2', region_name="us-east-1", 
-                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                aws_session_token=clixx_credentials['SessionToken'])
+# Create clients with assumed role credentials
+ec2_client = boto3.client('ec2', region_name='us-east-1',
+                          aws_access_key_id=credentials['AccessKeyId'],
+                          aws_secret_access_key=credentials['SecretAccessKey'],
+                          aws_session_token=credentials['SessionToken'])
+ec2_resource = boto3.resource('ec2', region_name='us-east-1',
+                               aws_access_key_id=credentials['AccessKeyId'],
+                               aws_secret_access_key=credentials['SecretAccessKey'],
+                               aws_session_token=credentials['SessionToken'])
 
-clixx_ec2_resource = boto3.resource('ec2', region_name="us-east-1",
-                                    aws_access_key_id=clixx_credentials['AccessKeyId'],
-                                    aws_secret_access_key=clixx_credentials['SecretAccessKey'],
-                                    aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_elbv2_client = boto3.client('elbv2', region_name="us-east-1", 
-                                  aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                  aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                  aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_rds_client = boto3.client('rds', region_name="us-east-1", 
-                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_efs_client = boto3.client('efs', region_name="us-east-1", 
-                                aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_route53_client = boto3.client('route53', 
-                                    aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                    aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                    aws_session_token=clixx_credentials['SessionToken'])
-
-clixx_autoscaling_client = boto3.client('autoscaling', region_name="us-east-1", 
-                                        aws_access_key_id=clixx_credentials['AccessKeyId'], 
-                                        aws_secret_access_key=clixx_credentials['SecretAccessKey'], 
-                                        aws_session_token=clixx_credentials['SessionToken'])
-
-
-def wait_for_resource(resource_type, resource_id, vpc_id=None):
-    logger.info(f"Checking the status of {resource_type} {resource_id}...")
-    while True:
-        try:
-            if resource_type == 'vpc':
-                response = clixx_ec2_client.describe_vpcs(VpcIds=[resource_id])
-                state = response['Vpcs'][0]['State']
-                if state == 'available':
-                    logger.info(f"VPC {resource_id} is now available.")
-                    break
-                logger.info(f"VPC {resource_id} is currently {state}. Checking again in 20 seconds...")
-            
-            elif resource_type == 'db_subnet_group':
-                response = clixx_rds_client.describe_db_subnet_groups(DBSubnetGroupName=resource_id)
-                db_subnet_group = response['DBSubnetGroups'][0]
-                status = db_subnet_group['SubnetGroupStatus']
-                if status == 'Complete':
-                    logger.info(f"DB Subnet Group {resource_id} is now complete.")
-                    break
-                logger.info(f"DB Subnet Group {resource_id} is currently {status}. Checking again in 20 seconds...")
-
-            elif resource_type == 'subnet':
-                response = clixx_ec2_client.describe_subnets(SubnetIds=[resource_id])
-                state = response['Subnets'][0]['State']
-                if state == 'available':
-                    logger.info(f"Subnet {resource_id} is now available.")
-                    break
-                logger.info(f"Subnet {resource_id} is currently {state}. Checking again in 20 seconds...")
-
-            elif resource_type == 'internet_gateway':
-                response = clixx_ec2_client.describe_internet_gateways(InternetGatewayIds=[resource_id])
-                if response['InternetGateways']:
-                    attachments = response['InternetGateways'][0]['Attachments']
-                    attached = any(att['State'] == 'available' and att['VpcId'] == vpc_id for att in attachments)
-                    if attached:
-                        logger.info(f"Internet Gateway {resource_id} is attached to VPC {vpc_id}.")
-                        break
-                    else:
-                        logger.info(f"Internet Gateway {resource_id} is not attached to VPC {vpc_id}. Checking again in 20 seconds...")
-                else:
-                    logger.info(f"No Internet Gateway found with ID {resource_id}. Checking again in 20 seconds...")
-
-            elif resource_type == 'nat_gateway':
-                response = clixx_ec2_client.describe_nat_gateways(NatGatewayIds=[resource_id])
-                state = response['NatGateways'][0]['State']
-                if state == 'available':
-                    logger.info(f"NAT Gateway {resource_id} is now available.")
-                    break
-                logger.info(f"NAT Gateway {resource_id} is currently {state}. Checking again in 20 seconds...")
-
-            elif resource_type == 'security_group':
-                response = clixx_ec2_client.describe_security_groups(GroupIds=[resource_id])
-                if response['SecurityGroups']:
-                    logger.info(f"Security Group {resource_id} is available.")
-                    break
-                logger.info(f"Security Group {resource_id} is not available. Checking again in 20 seconds...")
-
-            elif resource_type == 'db_instance':
-                response = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=resource_id)
-                state = response['DBInstances'][0]['DBInstanceStatus']
-                if state == 'available':
-                    logger.info(f"RDS instance {resource_id} is now available.")
-                    break
-                logger.info(f"RDS instance {resource_id} is currently {state}. Checking again in 20 seconds...")
-
-            elif resource_type == 'efs':
-                response = clixx_efs_client.describe_file_systems(FileSystemId=resource_id)
-                state = response['FileSystems'][0]['LifeCycleState']
-                if state == 'available':
-                    logger.info(f"EFS {resource_id} is now available.")
-                    break
-                logger.info(f"EFS {resource_id} is currently {state}. Checking again in 20 seconds...")
-
-            elif resource_type == 'load_balancer':
-                response = clixx_elbv2_client.describe_load_balancers(LoadBalancerArns=[resource_id])
-                if response['LoadBalancers']:
-                    state = response['LoadBalancers'][0]['State']['Code']
-                    if state == 'active':
-                        logger.info(f"Load Balancer {resource_id} is now active.")
-                        break
-                    logger.info(f"Load Balancer {resource_id} is currently {state}. Checking again in 20 seconds...")
-                else:
-                    logger.info(f"Load Balancer {resource_id} is not found. Checking again in 20 seconds...")
-
-            elif resource_type == 'listener':
-                response = clixx_elbv2_client.describe_listeners(ListenerArns=[resource_id])
-                if response['Listeners']:
-                    logger.info(f"Listener {resource_id} is now active.")
-                    break
-                logger.info(f"Listener {resource_id} is not active. Checking again in 20 seconds...")
-
-            elif resource_type == 'route53_record':
-                if vpc_id is None:
-                    logger.error("HostedZoneId (vpc_id) is None. Cannot check Route 53 records.")
-                    break
-                logger.info(f"Checking records in hosted zone: {vpc_id}")
-                response = clixx_route53_client.list_resource_record_sets(HostedZoneId=vpc_id)
-                records = response['ResourceRecordSets']
-                if any(record['Name'] == f"{resource_id}." and record['Type'] == 'A' for record in records):
-                    logger.info(f"Route 53 Record {resource_id} is now available.")
-                    break
-                logger.info(f"Route 53 Record {resource_id} is not available. Checking again in 20 seconds...")
-
-            elif resource_type == 'efs_mount_target':
-                response = clixx_efs_client.describe_mount_targets(FileSystemId=resource_id)
-                mount_targets = response['MountTargets']
-                found_target = False
-                for mount_target in mount_targets:
-                    mount_target_id = mount_target['MountTargetId']
-                    state = mount_target['LifeCycleState']
-                    subnet_id = mount_target['SubnetId']
-                    if state == 'available':
-                        logger.info(f"EFS Mount Target {mount_target_id} for File System {resource_id} is now available in subnet {subnet_id}.")
-                        return
-                    else:
-                        logger.info(f"EFS Mount Target {mount_target_id} for File System {resource_id} is not available in subnet {subnet_id}. Checking again in 20 seconds...")
-                        found_target = True
-                if not found_target:
-                    logger.info(f"No EFS mount targets found for File System {resource_id}. Checking again in 20 seconds...")
-
-            elif resource_type == 'launch_template':
-                response = clixx_ec2_client.describe_launch_templates(LaunchTemplateNames=[resource_id])
-                if response['LaunchTemplates']:
-                    logger.info(f"Launch Template {resource_id} is now available.")
-                    break
-                logger.info(f"Launch Template {resource_id} is not available. Checking again in 20 seconds...")
-
-            elif resource_type == 'auto_scaling_group':
-                response = clixx_autoscaling_client.describe_auto_scaling_groups(AutoScalingGroupNames=[resource_id])
-                asgs = response['AutoScalingGroups']
-                if asgs and asgs[0]['Status'] == 'Active':
-                    logger.info(f"Auto Scaling Group {resource_id} is now active.")
-                    break
-                logger.info(f"Auto Scaling Group {resource_id} is not active. Checking again in 20 seconds...")
-
-            elif resource_type == 'target_group':
-                response = clixx_elbv2_client.describe_target_groups(Names=[resource_id])
-                if response['TargetGroups']:
-                    logger.info(f"Target Group {resource_id} is now available.")
-                    break
-                logger.info(f"Target Group {resource_id} is not available. Checking again in 20 seconds...")
-
-            time.sleep(20)
-
-        except ClientError as e:
-            logger.error(f"Error describing {resource_type} {resource_id}: {e}")
-            time.sleep(20)
-
-            time.sleep(20)
-
-# Variables
-clixx_vpc_cidr_block = "10.0.0.0/16"
-clixx_public_subnet_cidr_block_1 = "10.0.1.0/24"
-clixx_public_subnet_cidr_block_2 = "10.0.2.0/24"
-clixx_private_subnet_cidr_block_1 = "10.0.3.0/24"
-clixx_private_subnet_cidr_block_2 = "10.0.4.0/24"
-clixx_db_instance_identifier = "Wordpressdbclixx"
-clixx_db_snapshot_identifier = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"
-clixx_db_instance_class = "db.m6gd.large"
-clixx_db_username = "wordpressuser"
-clixx_db_password = "W3lcome123"
-clixx_ami_id = "ami-00f251754ac5da7f0"
-clixx_instance_type = "t2.micro"
-clixx_key_pair_name = "bastionkey.pem"
-clixx_certificate_arn = "arn:aws:acm:us-east-1:619071313311:certificate/ed0a7048-b2f1-4ca7-835d-06d5cc51f805"
-clixx_hosted_zone_id = "Z0881876FFUR3OKRNM20"
-clixx_record_name = "dev.clixx-dasola.com"
-clixx_aws_region = "us-east-1"
-
-# --- VPC ---
-clixx_vpcs = clixx_ec2_client.describe_vpcs(Filters=[{'Name': 'cidr', 'Values': [clixx_vpc_cidr_block]}])
-if not clixx_vpcs['Vpcs']:
-    clixx_vpc = clixx_ec2_resource.create_vpc(CidrBlock=clixx_vpc_cidr_block)
-    clixx_ec2_client.create_tags(Resources=[clixx_vpc.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKVPC'}])
-    clixx_ec2_client.modify_vpc_attribute(VpcId=clixx_vpc.id, EnableDnsSupport={'Value': True})
-    clixx_ec2_client.modify_vpc_attribute(VpcId=clixx_vpc.id, EnableDnsHostnames={'Value': True})
-    logger.info(f"VPC created: {clixx_vpc.id} with Name tag 'CLIXXSTACKVPC'")
-    wait_for_resource('vpc', clixx_vpc.id)
-else:
-    logger.info(f"VPC already exists with CIDR block {clixx_vpc_cidr_block}")
-clixx_vpc_id = clixx_vpcs['Vpcs'][0]['VpcId'] if clixx_vpcs['Vpcs'] else clixx_vpc.id
-
-# --- Subnets ---
-clixx_subnets_1 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'Values': [clixx_public_subnet_cidr_block_1]}])
-if not clixx_subnets_1['Subnets']:
-    clixx_subnet_1 = clixx_ec2_client.create_subnet(CidrBlock=clixx_public_subnet_cidr_block_1, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "a")
-    clixx_ec2_client.create_tags(Resources=[clixx_subnet_1['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPUBSUB"}])
-    logger.info(f"Public Subnet 1 created: {clixx_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB'")
-    wait_for_resource('subnet', clixx_subnet_1['Subnet']['SubnetId'])
-else:
-    logger.info(f"Public Subnet 1 already exists with CIDR block {clixx_public_subnet_cidr_block_1}")
-clixx_subnet_1_id = clixx_subnets_1['Subnets'][0]['SubnetId'] if clixx_subnets_1['Subnets'] else clixx_subnet_1['Subnet']['SubnetId']
-
-clixx_subnets_2 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'Values': [clixx_public_subnet_cidr_block_2]}])
-if not clixx_subnets_2['Subnets']:
-    clixx_subnet_2 = clixx_ec2_client.create_subnet(CidrBlock=clixx_public_subnet_cidr_block_2, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "b")
-    clixx_ec2_client.create_tags(Resources=[clixx_subnet_2['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPUBSUB2"}])
-    logger.info(f"Public Subnet 2 created: {clixx_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPUBSUB2'")
-    wait_for_resource('subnet', clixx_subnet_2['Subnet']['SubnetId'])
-else:
-    logger.info(f"Public Subnet 2 already exists with CIDR block {clixx_public_subnet_cidr_block_2}")
-clixx_subnet_2_id = clixx_subnets_2['Subnets'][0]['SubnetId'] if clixx_subnets_2['Subnets'] else clixx_subnet_2['Subnet']['SubnetId']
-
-clixx_private_subnets_1 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'Values': [clixx_private_subnet_cidr_block_1]}])
-if not clixx_private_subnets_1['Subnets']:
-    clixx_private_subnet_1 = clixx_ec2_client.create_subnet(CidrBlock=clixx_private_subnet_cidr_block_1, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "a")
-    clixx_ec2_client.create_tags(Resources=[clixx_private_subnet_1['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPRIVSUB1"}])
-    logger.info(f"Private Subnet 1 created: {clixx_private_subnet_1['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB1'")
-    wait_for_resource('subnet', clixx_private_subnet_1['Subnet']['SubnetId'])
-else:
-    logger.info(f"Private Subnet 1 already exists with CIDR block {clixx_private_subnet_cidr_block_1}")
-clixx_private_subnet_1_id = clixx_private_subnets_1['Subnets'][0]['SubnetId'] if clixx_private_subnets_1['Subnets'] else clixx_private_subnet_1['Subnet']['SubnetId']
-
-clixx_private_subnets_2 = clixx_ec2_client.describe_subnets(Filters=[{'Name': 'cidr', 'Values': [clixx_private_subnet_cidr_block_2]}])
-if not clixx_private_subnets_2['Subnets']:
-    clixx_private_subnet_2 = clixx_ec2_client.create_subnet(CidrBlock=clixx_private_subnet_cidr_block_2, VpcId=clixx_vpc_id, AvailabilityZone=clixx_aws_region + "b")
-    clixx_ec2_client.create_tags(Resources=[clixx_private_subnet_2['Subnet']['SubnetId']], Tags=[{'Key': 'Name', 'Value': "CLIXXSTACKPRIVSUB2"}])
-    logger.info(f"Private Subnet 2 created: {clixx_private_subnet_2['Subnet']['SubnetId']} with Name tag 'CLIXXSTACKPRIVSUB2'")
-    wait_for_resource('subnet', clixx_private_subnet_2['Subnet']['SubnetId'])
-else:
-    logger.info(f"Private Subnet 2 already exists with CIDR block {clixx_private_subnet_cidr_block_2}")
-clixx_private_subnet_2_id = clixx_private_subnets_2['Subnets'][0]['SubnetId'] if clixx_private_subnets_2['Subnets'] else clixx_private_subnet_2['Subnet']['SubnetId']
-
-# --- Internet Gateway ---
-clixx_igw_list = list(clixx_ec2_resource.internet_gateways.filter(Filters=[{'Name': 'attachment.vpc-id', 'Values': [clixx_vpc_id]}]))
-if not clixx_igw_list:
-    clixx_igw = clixx_ec2_resource.create_internet_gateway()
-    clixx_ec2_client.attach_internet_gateway(VpcId=clixx_vpc_id, InternetGatewayId=clixx_igw.id)
-    clixx_ec2_client.create_tags(Resources=[clixx_igw.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKIGW'}])
-    logger.info(f"Internet Gateway created: {clixx_igw.id} with Name tag 'CLIXXSTACKIGW'")
-    wait_for_resource('internet_gateway', clixx_igw.id, vpc_id=clixx_vpc_id)
-else:
-    clixx_igw = clixx_igw_list[0]
-    logger.info(f"Internet Gateway already exists with ID {clixx_igw.id}")
-
-# --- Route Tables ---
-clixx_pub_route_table_list = list(clixx_ec2_resource.route_tables.filter(Filters=[{'Name': 'association.main', 'Values': ['false']}]))
-if not clixx_pub_route_table_list:
-    clixx_pub_route_table = clixx_ec2_resource.create_route_table(VpcId=clixx_vpc_id)
-    clixx_ec2_client.create_tags(Resources=[clixx_pub_route_table.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKPUBRT'}])
-    logger.info(f"Public Route Table created: {clixx_pub_route_table.id} with Name tag 'CLIXXSTACKPUBRT'")
-else:
-    clixx_pub_route_table = clixx_pub_route_table_list[0]
-    logger.info(f"Public Route Table already exists with ID {clixx_pub_route_table.id}")
-
-clixx_priv_route_table_list = list(clixx_ec2_resource.route_tables.filter(Filters=[{'Name': 'association.main', 'Values': ['false']}]))
-if not clixx_priv_route_table_list:
-    clixx_priv_route_table = clixx_ec2_resource.create_route_table(VpcId=clixx_vpc_id)
-    clixx_ec2_client.create_tags(Resources=[clixx_priv_route_table.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKPRIVRT'}])
-    logger.info(f"Private Route Table created: {clixx_priv_route_table.id} with Name tag 'CLIXXSTACKPRIVRT'")
-else:
-    clixx_priv_route_table = clixx_priv_route_table_list[0]
-    logger.info(f"Private Route Table already exists with ID {clixx_priv_route_table.id}")
-
-# --- Route for Internet Access for Public Subnets ---
-clixx_routes = [route for route in clixx_pub_route_table.routes if route.destination_cidr_block == '0.0.0.0/0']
-if not clixx_routes:
-    clixx_pub_route_table.create_route(
-        DestinationCidrBlock='0.0.0.0/0',
-        GatewayId=clixx_igw.id
+# Function to create subnets and log status
+def create_subnet(vpc_id, cidr_block, az, name_tag):
+    response = ec2_client.create_subnet(
+        VpcId=vpc_id,
+        CidrBlock=cidr_block,
+        AvailabilityZone=az
     )
-    logger.info("Public route created for Internet access")
+    subnet_id = response['Subnet']['SubnetId']
+    ec2_client.create_tags(Resources=[subnet_id], Tags=[{'Key': 'Name', 'Value': name_tag}])
+    logger.info(f"Subnet {name_tag} created: {subnet_id}")
+    return subnet_id
+
+# Variables for VPC and subnets
+vpc_cidr_block = '10.0.0.0/16'
+public_subnets_cidrs = ['10.0.1.0/24', '10.0.2.0/24']
+private_subnets_cidrs_az1 = ['10.0.3.0/24', '10.0.4.0/24', '10.0.5.0/24', '10.0.6.0/24', '10.0.7.0/24']
+private_subnets_cidrs_az2 = ['10.0.8.0/24', '10.0.9.0/24', '10.0.10.0/24', '10.0.11.0/24', '10.0.12.0/24']
+region = 'us-east-1'
+availability_zones = [f'{region}a', f'{region}b']
+
+# Create VPC (if not already created)
+vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'cidr', 'Values': [vpc_cidr_block]}])
+if not vpcs['Vpcs']:
+    vpc = ec2_resource.create_vpc(CidrBlock=vpc_cidr_block)
+    ec2_client.create_tags(Resources=[vpc.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKVPC'}])
+    ec2_client.modify_vpc_attribute(VpcId=vpc.id, EnableDnsSupport={'Value': True})
+    ec2_client.modify_vpc_attribute(VpcId=vpc.id, EnableDnsHostnames={'Value': True})
+    logger.info(f"VPC created: {vpc.id}")
+    vpc_id = vpc.id
 else:
-    logger.info("Public route for Internet access already exists")
+    vpc_id = vpcs['Vpcs'][0]['VpcId']
+    logger.info(f"VPC already exists: {vpc_id}")
 
-# --- Associate Subnets with Route Tables ---
-clixx_pub_associations = [assoc for assoc in clixx_pub_route_table.associations if assoc.subnet_id in [clixx_subnet_1_id, clixx_subnet_2_id]]
-if not clixx_pub_associations:
-    clixx_pub_route_table.associate_with_subnet(SubnetId=clixx_subnet_1_id) 
-    clixx_pub_route_table.associate_with_subnet(SubnetId=clixx_subnet_2_id)
-    logger.info("Public subnets associated with Public Route Table")
+# Create public subnets
+public_subnet_ids = []
+for i, cidr in enumerate(public_subnets_cidrs):
+    subnet_id = create_subnet(vpc_id, cidr, availability_zones[i], f'CLIXX-PublicSubnet-{i+1}')
+    public_subnet_ids.append(subnet_id)
+
+# Create private subnets for AZ1
+private_subnet_ids_az1 = []
+for i, cidr in enumerate(private_subnets_cidrs_az1):
+    subnet_id = create_subnet(vpc_id, cidr, availability_zones[0], f'CLIXX-PrivateSubnet-AZ1-{i+1}')
+    private_subnet_ids_az1.append(subnet_id)
+
+# Create private subnets for AZ2
+private_subnet_ids_az2 = []
+for i, cidr in enumerate(private_subnets_cidrs_az2):
+    subnet_id = create_subnet(vpc_id, cidr, availability_zones[1], f'CLIXX-PrivateSubnet-AZ2-{i+1}')
+    private_subnet_ids_az2.append(subnet_id)
+
+# Create Internet Gateway
+igw_response = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+if not igw_response['InternetGateways']:
+    igw = ec2_resource.create_internet_gateway()
+    ec2_client.attach_internet_gateway(VpcId=vpc_id, InternetGatewayId=igw.id)
+    ec2_client.create_tags(Resources=[igw.id], Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKIGW'}])
+    logger.info(f"Internet Gateway created: {igw.id}")
+    igw_id = igw.id
 else:
-    logger.info("Public subnets already associated with Public Route Table")
+    igw_id = igw_response['InternetGateways'][0]['InternetGatewayId']
+    logger.info(f"Internet Gateway already exists: {igw_id}")
 
-# Check if each private subnet is already associated with the private route table
-for subnet_id in [clixx_private_subnet_1_id, clixx_private_subnet_2_id]:
-    existing_association = any(assoc.subnet_id == subnet_id for assoc in clixx_priv_route_table.associations)
-    if not existing_association:
-        clixx_priv_route_table.associate_with_subnet(SubnetId=subnet_id)
-        logger.info(f"Private subnet {subnet_id} associated with Private Route Table")
-    else:
-        logger.info(f"Private subnet {subnet_id} is already associated with the Private Route Table")
-
-
-# --- Security Group ---
-clixx_existing_public_sg = list(clixx_ec2_resource.security_groups.filter(Filters=[{'Name': 'group-name', 'Values': ['CLIXXSTACKSG']}]))
-if not clixx_existing_public_sg:
-    clixx_public_sg = clixx_ec2_resource.create_security_group(
-        GroupName='CLIXXSTACKSG',
-        Description='Public Security Group for App Servers',
-        VpcId=clixx_vpc.id
+# Create NAT Gateways (one per public subnet)
+nat_gateway_ids = []
+for subnet_id in public_subnet_ids:
+    eip = ec2_client.allocate_address(Domain='vpc')
+    nat_gw_response = ec2_client.create_nat_gateway(
+        SubnetId=subnet_id,
+        AllocationId=eip['AllocationId']
     )
-    clixx_public_sg.create_tags(Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKSG'}])
-    clixx_ec2_client.authorize_security_group_ingress(
-        GroupId=clixx_public_sg.id,
-        IpPermissions=[
-            {'IpProtocol': 'tcp', 'FromPort': 22, 'ToPort': 22, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
+    nat_gw_id = nat_gw_response['NatGateway']['NatGatewayId']
+    nat_gateway_ids.append(nat_gw_id)
+    logger.info(f"NAT Gateway created: {nat_gw_id}")
+    time.sleep(10)  # Wait for NAT Gateway to be provisioned
+
+# Create Route Tables and associate with subnets
+# Public route table
+pub_route_table = ec2_resource.create_route_table(VpcId=vpc_id)
+ec2_client.create_tags(Resources=[pub_route_table.id], Tags=[{'Key': 'Name', 'Value': 'CLIXX-PublicRT'}])
+logger.info(f"Public Route Table created: {pub_route_table.id}")
+pub_route_table.create_route(DestinationCidrBlock='0.0.0.0/0', GatewayId=igw_id)
+
+for subnet_id in public_subnet_ids:
+    pub_route_table.associate_with_subnet(SubnetId=subnet_id)
+    logger.info(f"Subnet {subnet_id} associated with Public Route Table")
+
+# Private route tables (one for each AZ)
+for i, nat_gw_id in enumerate(nat_gateway_ids):
+    priv_route_table = ec2_resource.create_route_table(VpcId=vpc_id)
+    ec2_client.create_tags(Resources=[priv_route_table.id], Tags=[{'Key': 'Name', 'Value': f'CLIXX-PrivateRT-AZ{i+1}'}])
+    logger.info(f"Private Route Table created: {priv_route_table.id}")
+    priv_route_table.create_route(DestinationCidrBlock='0.0.0.0/0', NatGatewayId=nat_gw_id)
+    
+    private_subnet_ids = private_subnet_ids_az1 if i == 0 else private_subnet_ids_az2
+    for subnet_id in private_subnet_ids:
+        priv_route_table.associate_with_subnet(SubnetId=subnet_id)
+        logger.info(f"Subnet {subnet_id} associated with Private Route Table AZ{i+1}")
+
+logger.info("VPC, subnets, route tables, and NAT Gateways created successfully.")
+
+
+# --- Security Groups and Additional Components ---
+
+# Function to create a security group
+def create_security_group(name, description, vpc_id, ingress_rules=None):
+    sg = ec2_client.create_security_group(
+        GroupName=name,
+        Description=description,
+        VpcId=vpc_id
+    )
+    ec2_client.create_tags(Resources=[sg['GroupId']], Tags=[{'Key': 'Name', 'Value': name}])
+    logger.info(f"Security group '{name}' created with ID: {sg['GroupId']}")
+    
+    # Add ingress rules if provided
+    if ingress_rules:
+        ec2_client.authorize_security_group_ingress(
+            GroupId=sg['GroupId'],
+            IpPermissions=ingress_rules
+        )
+        logger.info(f"Ingress rules applied to security group '{name}'")
+    
+    return sg['GroupId']
+
+# Create public security group (e.g., for bastion and load balancer)
+public_sg_id = create_security_group(
+    'CLIXX-PublicSG',
+    'Public security group for bastion and load balancer',
+    vpc_id,
+    ingress_rules=[
+        {'IpProtocol': 'tcp', 'FromPort': 22, 'ToPort': 22, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
             {'IpProtocol': 'tcp', 'FromPort': 80, 'ToPort': 80, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
             {'IpProtocol': 'tcp', 'FromPort': 443, 'ToPort': 443, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]},
             {'IpProtocol': 'tcp', 'FromPort': 2049, 'ToPort': 2049, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
             {'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
             {'IpProtocol': 'icmp', 'FromPort': -1, 'ToPort': -1, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
         ]
-    )
-    logger.info(f"Public Security Group created: {clixx_public_sg.id}")
-else:
-    clixx_public_sg = clixx_existing_public_sg[0]
-    logger.info(f"Public Security Group already exists with ID: {clixx_public_sg.id}")
-
-clixx_existing_private_sg = list(clixx_ec2_resource.security_groups.filter(Filters=[{'Name': 'group-name', 'Values': ['CLIXXSTACKSGPRIV']}]))
-if not clixx_existing_private_sg:
-    clixx_private_sg = clixx_ec2_resource.create_security_group(
-        GroupName='CLIXXSTACKSGPRIV',
-        Description='Private Security Group for RDS and EFS',
-        VpcId=clixx_vpc.id
-    )
-    clixx_private_sg.create_tags(Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKSGPRIV'}])
-    clixx_ec2_client.authorize_security_group_ingress(
-        GroupId=clixx_private_sg.id,
-        IpPermissions=[
-            {'IpProtocol': 'tcp', 'FromPort': 2049, 'ToPort': 2049, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
-            {'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
-        ]
-    )
-    logger.info(f"Private Security Group created: {clixx_private_sg.id}")
-else:
-    clixx_private_sg = clixx_existing_private_sg[0]
-    logger.info(f"Private Security Group already exists with ID: {clixx_private_sg.id}")
-logger.info(f"Security groups created: Public SG (ID: {clixx_public_sg.id}), Private SG (ID: {clixx_private_sg.id})")
-
-# --- RDS Instance ---
-clixx_DBSubnetGroupName = 'CLIXXSTACKDBSUBNETGROUP'
-clixx_response = clixx_rds_client.describe_db_subnet_groups()
-clixx_db_subnet_group_exists = False
-for clixx_subnet_group in clixx_response['DBSubnetGroups']:
-    if clixx_subnet_group['DBSubnetGroupName'] == clixx_DBSubnetGroupName:
-        clixx_db_subnet_group_exists = True
-        clixx_DBSubnetGroupName = clixx_subnet_group['DBSubnetGroupName']
-        logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' already exists. Proceeding with the existing one.")
-        break
-
-if not clixx_db_subnet_group_exists:
-    clixx_response = clixx_rds_client.create_db_subnet_group(
-        DBSubnetGroupName=clixx_DBSubnetGroupName,
-        SubnetIds=[clixx_private_subnet_1_id, clixx_private_subnet_2_id],
-        DBSubnetGroupDescription='My stack DB subnet group',
-        Tags=[{'Key': 'Name', 'Value': 'CLIXXSTACKDBSUBNETGROUP'}]
-    )
-    clixx_DBSubnetGroupName = clixx_response['DBSubnetGroup']['DBSubnetGroupName']
-    logger.info(f"DB Subnet Group '{clixx_DBSubnetGroupName}' created successfully.")
-
-clixx_db_instances = clixx_rds_client.describe_db_instances()
-clixx_db_instance_identifiers = [db['DBInstanceIdentifier'] for db in clixx_db_instances['DBInstances']]
-if clixx_db_instance_identifier in clixx_db_instance_identifiers:
-    clixx_instances = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=clixx_db_instance_identifier)
-    logger.info(f"DB Instance '{clixx_db_instance_identifier}' already exists. Details: {clixx_instances}")
-else:
-    logger.info(f"DB Instance '{clixx_db_instance_identifier}' not found. Restoring from snapshot...")
-    clixx_response = clixx_rds_client.restore_db_instance_from_db_snapshot(
-        DBInstanceIdentifier=clixx_db_instance_identifier,
-        DBSnapshotIdentifier=clixx_db_snapshot_identifier,
-        DBInstanceClass=clixx_db_instance_class,
-        VpcSecurityGroupIds=[clixx_private_sg.id],
-        DBSubnetGroupName=clixx_DBSubnetGroupName,
-        PubliclyAccessible=False,
-        Tags=[{'Key': 'Name', 'Value': 'wordpressdbclixx'}]
-    )
-    logger.info(f"Restore operation initiated. Response: {clixx_response}")
-    wait_for_resource('db_instance', clixx_db_instance_identifier)
-
-# --- Create EFS file system ---
-clixx_efs_response = clixx_efs_client.describe_file_systems(
-    CreationToken='CLiXX-EFS'
 )
 
-# If EFS exists, proceed with the existing EFS
-if clixx_efs_response['FileSystems']:
-    clixx_file_system_id = clixx_efs_response['FileSystems'][0]['FileSystemId']
-    logger.info(f"EFS already exists with FileSystemId: {clixx_file_system_id}")
-else:
-    # Create EFS if it doesn't exist
-    clixx_efs_response = clixx_efs_client.create_file_system(
-        CreationToken='CLiXX-EFS',
-        PerformanceMode='generalPurpose'
-    )
-    clixx_file_system_id = clixx_efs_response['FileSystemId']
-    logger.info(f"EFS created with FileSystemId: {clixx_file_system_id}")
-    wait_for_resource('efs', clixx_file_system_id)
+# Create private security group (e.g., for application and database servers)
+private_sg_id = create_security_group(
+    'CLIXX-PrivateSG',
+    'Private security group for application and database servers',
+    vpc_id,
+    ingress_rules=[
+        {'IpProtocol': 'tcp', 'FromPort': 22, 'ToPort': 22, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
+        {'IpProtocol': 'tcp', 'FromPort': 2049, 'ToPort': 2049, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]},
+        {'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}
+    ]
+)
 
-# Wait until the EFS file system is in 'available' state
-while True:
-    clixx_efs_info = clixx_efs_client.describe_file_systems(
-        FileSystemId=clixx_file_system_id
-    )
-    clixx_lifecycle_state = clixx_efs_info['FileSystems'][0]['LifeCycleState']
-    if clixx_lifecycle_state == 'available':
-        logger.info(f"EFS CLiXX-EFS is now available with FileSystemId: {clixx_file_system_id}")
-        break
-    else:
-        logger.info(f"EFS is in '{clixx_lifecycle_state}' state. Waiting for it to become available...")
-        time.sleep(10)
+logger.info("Security groups created and configured.")
 
-# Add a tag to the EFS file system
-clixx_efs_client.create_tags(FileSystemId=clixx_file_system_id, Tags=[{'Key': 'Name', 'Value': 'CLiXX-EFS'}])
-
-# After ensuring the file system is available, create the mount targets in the private subnets
-clixx_private_subnet_ids = [clixx_private_subnet_1_id, clixx_private_subnet_2_id]
-for clixx_private_subnet_id in clixx_private_subnet_ids:
-    # Check if mount target already exists for the subnet
-    clixx_mount_targets_response = clixx_efs_client.describe_mount_targets(
-        FileSystemId=clixx_file_system_id
-    )
-    # Extract the list of subnet IDs for existing mount targets
-    clixx_existing_mount_targets = [mt['SubnetId'] for mt in clixx_mount_targets_response['MountTargets']]
-    # If the current subnet does not have a mount target, create one
-    if clixx_private_subnet_id not in clixx_existing_mount_targets:
-        clixx_mount_target_response = clixx_efs_client.create_mount_target(
-            FileSystemId=clixx_file_system_id,
-            SubnetId=clixx_private_subnet_id,
-            SecurityGroups=[clixx_private_sg.id]
-        )
-        logger.info(f"Mount target created in Private Subnet: {clixx_private_subnet_id}")
-        wait_for_resource('efs_mount_target', clixx_file_system_id)
-    else:
-        logger.info(f"Mount target already exists in Private Subnet: {clixx_private_subnet_id}")
-
-# Attach Lifecycle Policy (optional)
-clixx_efs_client.put_lifecycle_configuration(
-    FileSystemId=clixx_file_system_id,
-    LifecyclePolicies=[
+# --- Deploy Bastion Host in Public Subnet ---
+bastion_instance = ec2_resource.create_instances(
+    ImageId='ami-00f251754ac5da7f0',  # Replace with the latest Linux AMI ID
+    InstanceType='t2.micro',
+    KeyName='bastionkey.pem',
+    MinCount=1,
+    MaxCount=1,
+    NetworkInterfaces=[
         {
-            'TransitionToIA': 'AFTER_30_DAYS'
-        },
+            'SubnetId': public_subnet_ids[0],
+            'DeviceIndex': 0,
+            'AssociatePublicIpAddress': True,
+            'Groups': [public_sg_id]
+        }
+    ],
+    TagSpecifications=[
         {
-            'TransitionToPrimaryStorageClass': 'AFTER_1_ACCESS'
+            'ResourceType': 'instance',
+            'Tags': [{'Key': 'Name', 'Value': 'CLIXX-BastionHost'}]
         }
     ]
 )
-logger.info(f"Lifecycle policy applied to EFS CLiXX-EFS")
+logger.info(f"Bastion host deployed: Instance ID {bastion_instance[0].id}")
 
-# --- Create Target Group ---
-# List all target groups and filter for 'CLiXX-TG'
-clixx_all_tg_response = clixx_elbv2_client.describe_target_groups()
-clixx_target_groups = clixx_all_tg_response['TargetGroups']
-# Check if 'CLiXX-TG' exists in the list of target groups
-clixx_target_group_arn = None
-for clixx_tg in clixx_target_groups:
-    if clixx_tg['TargetGroupName'] == 'CLiXX-TG':
-        clixx_target_group_arn = clixx_tg['TargetGroupArn']
-        logger.info(f"Target Group already exists with ARN: {clixx_target_group_arn}")
-        break
-if clixx_target_group_arn is None:
-    # Target group does not exist, create a new one
-    logger.info("Target Group 'CLiXX-TG' not found. Creating a new target group.")
-    clixx_target_group = clixx_elbv2_client.create_target_group(
-        Name='CLiXX-TG',
-        Protocol='HTTP',
-        Port=80,
-        VpcId=clixx_vpc.id,
-        TargetType='instance',
-        HealthCheckProtocol='HTTP',
-        HealthCheckPort='traffic-port',
-        HealthCheckPath='/',
-        HealthCheckIntervalSeconds=120,  
-        HealthCheckTimeoutSeconds=30,    
-        HealthyThresholdCount=5,         
-        UnhealthyThresholdCount=4,       
-        Matcher={
-            'HttpCode': '200-399'        
-        }
-    )
-    clixx_target_group_arn = clixx_target_group['TargetGroups'][0]['TargetGroupArn']
-    logger.info(f"Target Group created with ARN: {clixx_target_group_arn}")
+# --- Create Load Balancer ---
+elb_client = boto3.client('elbv2', region_name='us-east-1',
+                          aws_access_key_id=credentials['AccessKeyId'],
+                          aws_secret_access_key=credentials['SecretAccessKey'],
+                          aws_session_token=credentials['SessionToken'])
 
-# --- Create Application Load Balancer ---
-# List all load balancers
-clixx_all_lb_response = clixx_elbv2_client.describe_load_balancers()
-clixx_load_balancers = clixx_all_lb_response['LoadBalancers']
-# Check if 'CLiXX-LB' exists in the list of load balancers
-clixx_load_balancer_arn = None
-for clixx_lb in clixx_load_balancers:
-    if clixx_lb['LoadBalancerName'] == 'CLiXX-LB':
-        clixx_load_balancer_arn = clixx_lb['LoadBalancerArn']
-        logger.info(f"Load Balancer already exists with ARN: {clixx_load_balancer_arn}")
-        break
-if clixx_load_balancer_arn is None:
-    # Load balancer does not exist, create a new one
-    logger.info("Load Balancer 'CLiXX-LB' not found. Creating a new load balancer.")
-    clixx_load_balancer = clixx_elbv2_client.create_load_balancer(
-        Name='CLiXX-LB',
-        Subnets=[clixx_subnet_1_id, clixx_subnet_2_id],
-        SecurityGroups=[clixx_public_sg.id],
-        Scheme='internet-facing',
-        IpAddressType='ipv4',
-        Tags=[
-            {
-                'Key': 'Name',
-                'Value': 'CLiXX-LB'
-            },
-            {
-                'Key': 'Environment',
-                'Value': 'dev'
-            }
-        ]
-    )
-    clixx_load_balancer_arn = clixx_load_balancer['LoadBalancers'][0]['LoadBalancerArn']
-    logger.info(f"Load Balancer created with ARN: {clixx_load_balancer_arn}")
-    wait_for_resource('load_balancer', clixx_load_balancer_arn)
-
-# Create Listener for the Load Balancer (HTTP & HTTPS)
-# Retrieve listeners for the load balancer
-clixx_http_listener_response = clixx_elbv2_client.describe_listeners(LoadBalancerArn=clixx_load_balancer_arn)
-clixx_existing_listeners = clixx_http_listener_response['Listeners']
-
-# Check if HTTP listener exists
-clixx_http_listener_exists = any(listener['Protocol'] == 'HTTP' for listener in clixx_existing_listeners)
-if not clixx_http_listener_exists:
-    clixx_elbv2_client.create_listener(
-        LoadBalancerArn=clixx_load_balancer_arn,
-        Protocol='HTTP',
-        Port=80,
-        DefaultActions=[{'Type': 'forward', 'TargetGroupArn': clixx_target_group_arn}]
-    )
-    logger.info(f"HTTP Listener created for Load Balancer: {clixx_load_balancer_arn}")
-else:
-    logger.info("HTTP Listener already exists.")
-
-# Check if HTTPS listener exists
-clixx_https_listener_exists = any(listener['Protocol'] == 'HTTPS' for listener in clixx_existing_listeners)
-if not clixx_https_listener_exists:
-    clixx_elbv2_client.create_listener(
-        LoadBalancerArn=clixx_load_balancer_arn,
-        Protocol='HTTPS',
-        Port=443,
-        SslPolicy='ELBSecurityPolicy-2016-08',
-        Certificates=[{
-            'CertificateArn': clixx_certificate_arn
-        }],
-        DefaultActions=[{'Type': 'forward', 'TargetGroupArn': clixx_target_group_arn}]
-    )
-    logger.info(f"HTTPS Listener created for Load Balancer: {clixx_load_balancer_arn}")
-else:
-    logger.info("HTTPS Listener already exists.")
-
-# --- Create Route 53 record for the load balancer ---
-clixx_route53_response = clixx_route53_client.list_resource_record_sets(
-    HostedZoneId=clixx_hosted_zone_id
+lb_response = elb_client.create_load_balancer(
+    Name='CLIXX-LoadBalancer',
+    Subnets=public_subnet_ids,
+    SecurityGroups=[public_sg_id],
+    Scheme='internet-facing',
+    Type='application',
+    IpAddressType='ipv4',
+    Tags=[
+        {'Key': 'Name', 'Value': 'CLIXX-LoadBalancer'}
+    ]
 )
-# Check if the record already exists using a broader approach
-clixx_record_exists = any(record['Name'] == clixx_record_name for record in clixx_route53_response['ResourceRecordSets'])
-if not clixx_record_exists:
-    clixx_route53_client.change_resource_record_sets(
-        HostedZoneId=clixx_hosted_zone_id,
-        ChangeBatch={
-            'Comment': 'Create a record for the CLiXX Load Balancer',
-            'Changes': [{
+logger.info(f"Load Balancer created with ARN: {lb_response['LoadBalancers'][0]['LoadBalancerArn']}")
+
+logger.info("Deployment of VPC, subnets, route tables, security groups, bastion host, and load balancer completed.")
+
+# --- Security Groups and Additional Components ---
+
+
+# --- Deploy Bastion Host in Public Subnet ---
+bastion_instance = ec2_resource.create_instances(
+    ImageId='ami-00f251754ac5da7f0',  # Replace with the latest Linux AMI ID
+    InstanceType='t2.micro',
+    KeyName='bastionkey.pem',
+    MinCount=1,
+    MaxCount=1,
+    NetworkInterfaces=[
+        {
+            'SubnetId': public_subnet_ids[0],
+            'DeviceIndex': 0,
+            'AssociatePublicIpAddress': True,
+            'Groups': [public_sg_id]
+        }
+    ],
+    TagSpecifications=[
+        {
+            'ResourceType': 'instance',
+            'Tags': [{'Key': 'Name', 'Value': 'CLIXX-BastionHost'}]
+        }
+    ]
+)
+logger.info(f"Bastion host deployed: Instance ID {bastion_instance[0].id}")
+
+# Create EFS file system
+efs_client = boto3.client('efs', region_name='us-east-1',
+                         aws_access_key_id=credentials['AccessKeyId'],
+                         aws_secret_access_key=credentials['SecretAccessKey'],
+                         aws_session_token=credentials['SessionToken'])
+
+efs_response = efs_client.create_file_system(
+    CreationToken='CLIXX-EFS-Token',
+    PerformanceMode='generalPurpose',
+    Tags=[{'Key': 'Name', 'Value': 'CLIXX-EFS'}]
+)
+efs_id = efs_response['FileSystemId']
+logger.info(f"EFS created with ID: {efs_id}")
+
+# Create mount targets for each private subnet
+for subnet_id in private_subnet_ids_az1[:2]:  # Adjust the range or subnets as necessary
+    try:
+        efs_client.create_mount_target(
+            FileSystemId=efs_id,
+            SubnetId=subnet_id,
+            SecurityGroups=[private_sg_id]
+        )
+        logger.info(f"Mount target created for EFS {efs_id} in subnet {subnet_id}")
+    except ClientError as e:
+        logger.error(f"Failed to create mount target for subnet {subnet_id}: {e}")
+
+for subnet_id in private_subnet_ids_az2[:2]:  # Adjust the range or subnets as necessary
+    try:
+        efs_client.create_mount_target(
+            FileSystemId=efs_id,
+            SubnetId=subnet_id,
+            SecurityGroups=[private_sg_id]
+        )
+        logger.info(f"Mount target created for EFS {efs_id} in subnet {subnet_id}")
+    except ClientError as e:
+        logger.error(f"Failed to create mount target for subnet {subnet_id}: {e}")
+
+# Apply lifecycle policy to EFS for automatic data transition
+efs_client.put_lifecycle_configuration(
+    FileSystemId=efs_id,
+    LifecyclePolicies=[
+        {'TransitionToIA': 'AFTER_30_DAYS'},
+        {'TransitionToPrimaryStorageClass': 'AFTER_1_ACCESS'}
+    ]
+)
+logger.info("Lifecycle policy applied to EFS.")
+
+
+
+# --- Create Route 53 Record ---
+route53_response = route53_client.change_resource_record_sets(
+    HostedZoneId=hosted_zone_id,
+    ChangeBatch={
+        'Comment': 'Create record for Load Balancer',
+        'Changes': [
+            {
                 'Action': 'CREATE',
                 'ResourceRecordSet': {
-                    'Name': clixx_record_name,
+                    'Name': 'dev.clixx-dasola.com',
                     'Type': 'A',
                     'AliasTarget': {
-                        'HostedZoneId': clixx_load_balancer['LoadBalancers'][0]['CanonicalHostedZoneId'],
-                        'DNSName': clixx_load_balancer['LoadBalancers'][0]['DNSName'],
+                        'HostedZoneId': lb_response['LoadBalancers'][0]['CanonicalHostedZoneId'],
+                        'DNSName': lb_response['LoadBalancers'][0]['DNSName'],
                         'EvaluateTargetHealth': False
                     }
                 }
-            }]
-        }
-    )
-    logger.info(f"Route 53 record created for {clixx_record_name}")
-else:
-    logger.info(f"Route 53 record already exists for {clixx_record_name}")
+            }
+        ]
+    }
+)
+logger.info("Route 53 record created for dev.clixx-dasola.com")
+
+# --- Create Target Group ---
+tg_response = elb_client.create_target_group(
+    Name='CLIXX-TG',
+    Protocol='HTTP',
+    Port=80,
+    VpcId=vpc_id,
+    HealthCheckProtocol='HTTP',
+    HealthCheckPath='/',
+    TargetType='instance',
+    Tags=[{'Key': 'Name', 'Value': 'CLIXX-TG'}]
+)
+tg_arn = tg_response['TargetGroups'][0]['TargetGroupArn']
+logger.info(f"Target Group created with ARN: {tg_arn}")
+
 
 # Encode the user data to Base64
 # Encode the user data to Base64
