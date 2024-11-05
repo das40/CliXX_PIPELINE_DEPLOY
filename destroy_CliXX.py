@@ -138,7 +138,10 @@ def delete_autoscaling_group():
         autoscaling_client.delete_auto_scaling_group(AutoScalingGroupName=autoscaling_group_name, ForceDelete=True)
         logger.info(f"Auto Scaling Group '{autoscaling_group_name}' deletion initiated.")
     except ClientError as e:
-        logger.error(f"Failed to delete Auto Scaling Group: {e}")
+        if "ValidationError" in str(e) and "not found" in str(e):
+            logger.info(f"Auto Scaling Group '{autoscaling_group_name}' not found, skipping.")
+        else:
+            logger.error(f"Failed to delete Auto Scaling Group: {e}")
 
 delete_with_retries(delete_autoscaling_group)
 
@@ -172,24 +175,34 @@ def delete_route53_record():
 delete_with_retries(delete_route53_record)
 
 def delete_internet_gateways(vpc_id):
-    # Describe and handle any elastic IP addresses associated with the VPC
-    addresses = ec2_client.describe_addresses()
-    for address in addresses['Addresses']:
-        if 'AssociationId' in address:
-            logger.info(f"Releasing Elastic IP: {address['PublicIp']}")
-            delete_with_retries(ec2_client.disassociate_address, AssociationId=address['AssociationId'])
-            delete_with_retries(ec2_client.release_address, AllocationId=address['AllocationId'])
-
-    # Detach and delete internet gateways
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
     for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
-        
-        # Detach first
+
+        # Handle associated Elastic IPs
+        addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
+        for address in addresses:
+            if 'AssociationId' in address:
+                try:
+                    logger.info(f"Releasing Elastic IP: {address['PublicIp']}")
+                    delete_with_retries(ec2_client.disassociate_address, AssociationId=address['AssociationId'])
+                except ClientError as e:
+                    if 'AuthFailure' in str(e):
+                        logger.error(f"No permission to disassociate Elastic IP {address['PublicIp']}: {e}")
+                        continue
+                    else:
+                        raise
+
+            # Attempt to release the IP address
+            try:
+                ec2_client.release_address(AllocationId=address['AllocationId'])
+                logger.info(f"Elastic IP {address['PublicIp']} released.")
+            except ClientError as e:
+                logger.error(f"Failed to release Elastic IP {address['PublicIp']}: {e}")
+
+        # Detach and delete the Internet Gateway
         delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
-        
-        # Then delete
         delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
 
 def delete_nat_gateways(vpc_id):
