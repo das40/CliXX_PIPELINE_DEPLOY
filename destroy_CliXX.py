@@ -57,8 +57,19 @@ hosted_zone_id = 'Z0881876FFUR3OKRNM20'
 record_name = 'dev.clixx-dasola.com'
 bastion_tag_key = 'Name'
 bastion_tag_value = 'CLIXX-BastionHost'
+WAIT_TIMEOUT = 600
 
-
+def wait_for_deletion(check_func, check_args, interval=10, timeout=WAIT_TIMEOUT):
+    """Wait for a resource deletion to complete with a timeout."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if not check_func(**check_args):
+            print("Resource deleted successfully.")
+            return True
+        print("Waiting for resource to delete...")
+        time.sleep(interval)
+    print("Timed out waiting for resource to delete.")
+    return False
 ##################### Delete the Bastion Server instance
 def delete_bastion_server():
     bastion_instances = ec2_client.describe_instances(
@@ -80,26 +91,21 @@ def delete_bastion_server():
 
 
 ##################### Delete the DB instance
+# Delete RDS instance
 def delete_rds_instance():
-    rds_instances = rds_client.describe_db_instances()
-    db_instance_exists = any(instance['DBInstanceIdentifier'] == db_instance_name for instance in rds_instances['DBInstances'])
-    if db_instance_exists:
-        rds_client.delete_db_instance(
-            DBInstanceIdentifier=db_instance_name,
-            SkipFinalSnapshot=True
-        )
+    try:
+        rds_client.delete_db_instance(DBInstanceIdentifier=db_instance_name, SkipFinalSnapshot=True)
         print(f"RDS instance '{db_instance_name}' deletion initiated.")
-    else:
+        
+        # Wait for RDS instance deletion with timeout
+        wait_for_deletion(
+            check_func=lambda **args: any(db['DBInstanceIdentifier'] == db_instance_name for db in rds_client.describe_db_instances()['DBInstances']),
+            check_args={}
+        )
+    except rds_client.exceptions.DBInstanceNotFoundFault:
         print(f"RDS instance '{db_instance_name}' not found.")
-    # Wait for RDS instance deletion
-    while db_instance_exists:
-        rds_instances = rds_client.describe_db_instances()
-        db_instance_exists = any(instance['DBInstanceIdentifier'] == db_instance_name for instance in rds_instances['DBInstances'])
-        if not db_instance_exists:
-            print(f"RDS instance '{db_instance_name}' deleted successfully.")
-        else:
-            print(f"Waiting for RDS instance '{db_instance_name}' to be deleted...")
-            time.sleep(10)
+    except Exception as e:
+        print(f"Error deleting RDS instance: {e}")
 
 ################### Delete Application Load Balancer
 def delete_load_balancer():
@@ -135,6 +141,35 @@ def delete_efs():
         print(f"Deleted EFS with File System ID: {file_system_id}")
     else:
         print(f"No EFS found with the name '{efs_name}'.")
+# Delete EFS and mount targets with timeout
+def delete_efs_and_mount_targets():
+    try:
+        fs_info = efs_client.describe_file_systems()
+        file_system_id = next((fs['FileSystemId'] for fs in fs_info['FileSystems'] if any(tag['Key'] == 'Name' and tag['Value'] == efs_name for tag in efs_client.list_tags_for_resource(ResourceId=fs['FileSystemId'])['Tags'])), None)
+        
+        if file_system_id:
+            print(f"Found EFS '{efs_name}' with ID: {file_system_id}")
+
+            # Delete mount targets
+            mount_targets = efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']
+            for mt in mount_targets:
+                mount_target_id = mt['MountTargetId']
+                efs_client.delete_mount_target(MountTargetId=mount_target_id)
+                print(f"Deleted mount target: {mount_target_id}")
+
+                # Wait for mount target to be deleted with timeout
+                wait_for_deletion(
+                    check_func=lambda mt_id: any(mount['MountTargetId'] == mt_id for mount in efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']),
+                    check_args={'mt_id': mount_target_id}
+                )
+
+            # Delete EFS
+            efs_client.delete_file_system(FileSystemId=file_system_id)
+            print(f"EFS '{efs_name}' with ID: {file_system_id} deleted.")
+        else:
+            print(f"No EFS found with the name '{efs_name}'.")
+    except Exception as e:
+        print(f"Error deleting EFS or mount targets: {e}")
 
 #################### Delete Target Group
 def delete_target_group():
@@ -244,6 +279,7 @@ def delete_vpc():
 delete_bastion_server() 
 delete_rds_instance()
 delete_load_balancer()
+delete_efs_and_mount_targets()
 delete_efs()
 delete_target_group()
 delete_route53_record()
