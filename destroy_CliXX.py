@@ -232,26 +232,39 @@ def delete_vpc():
         vpc_id = vpcs['Vpcs'][0]['VpcId']
         print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
-        subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-        for subnet in subnets['Subnets']:
-            ec2_client.delete_subnet(SubnetId=subnet['SubnetId'])
-            print(f"Subnet '{subnet['SubnetId']}' deleted.")
+        # Delete all subnets after removing NAT gateways and network interfaces
+        delete_nat_gateways(vpc_id)
+        delete_internet_gateways(vpc_id)
 
+        # Delete route tables (excluding the main route table)
         route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
         for rt in route_tables['RouteTables']:
             if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
                 ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
                 print(f"Route Table '{rt['RouteTableId']}' deleted.")
 
+        # Delete security groups, then disassociate and release Elastic IPs
         delete_security_groups()
         disassociate_and_release_elastic_ips()
-        delete_nat_gateways(vpc_id)
-        delete_internet_gateways(vpc_id)
 
-        ec2_client.delete_vpc(VpcId=vpc_id)
-        print(f"VPC '{vpc_id}' with Name '{vpc_name}' deleted.")
+        # Delete subnets
+        subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+        for subnet in subnets['Subnets']:
+            try:
+                ec2_client.delete_subnet(SubnetId=subnet['SubnetId'])
+                print(f"Subnet '{subnet['SubnetId']}' deleted.")
+            except Exception as e:
+                print(f"Failed to delete subnet '{subnet['SubnetId']}': {e}")
+
+        # Finally, delete the VPC
+        try:
+            ec2_client.delete_vpc(VpcId=vpc_id)
+            print(f"VPC '{vpc_id}' with Name '{vpc_name}' deleted.")
+        except Exception as e:
+            print(f"Failed to delete VPC '{vpc_id}': {e}")
     else:
         print(f"No VPC found with Name '{vpc_name}'")
+
 
 # Execute deletions
 delete_bastion_server()
