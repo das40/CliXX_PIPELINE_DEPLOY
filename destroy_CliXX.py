@@ -93,26 +93,74 @@ def delete_load_balancer():
             logger.error(f"Failed to delete Load Balancer: {e}")
 
 def delete_efs_and_mount_targets():
+    """Deletes the EFS and waits for mount targets to delete before proceeding."""
     try:
         fs_info = efs_client.describe_file_systems()
         for fs in fs_info['FileSystems']:
             tags = efs_client.list_tags_for_resource(ResourceId=fs['FileSystemId'])['Tags']
-            if any(tag['Key'] == 'Name' and tag['Value'] == efs_name for tag in tags):
+            if any(tag['Key'] == 'Name' and tag['Value'] == 'CLiXX-EFS' for tag in tags):
                 file_system_id = fs['FileSystemId']
                 mount_targets = efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']
+                
+                # Delete each mount target and ensure they are fully removed
                 for mt in mount_targets:
                     efs_client.delete_mount_target(MountTargetId=mt['MountTargetId'])
                     logger.info(f"Deleted mount target: {mt['MountTargetId']}")
-                time.sleep(5)
+                
+                # Wait for all mount targets to be deleted
+                while True:
+                    mt_check = efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']
+                    if not mt_check:
+                        logger.info(f"All mount targets deleted for EFS '{file_system_id}'.")
+                        break
+                    else:
+                        logger.info("Waiting for mount targets to delete...")
+                        time.sleep(5)
+                
+                # Now delete the EFS file system
                 efs_client.delete_file_system(FileSystemId=file_system_id)
-                logger.info(f"EFS '{efs_name}' deleted.")
+                logger.info(f"EFS '{file_system_id}' deleted.")
                 break
     except ClientError as e:
         if "FileSystemNotFound" in str(e):
-            logger.info(f"EFS '{efs_name}' not found, skipping.")
+            logger.info(f"EFS 'CLiXX-EFS' not found, skipping.")
         else:
             logger.error(f"Failed to delete EFS or its mount targets: {e}")
 
+delete_with_retries(delete_efs_and_mount_targets)
+
+def disassociate_and_release_elastic_ips():
+    """Disassociates and releases Elastic IPs, with error handling for permissions."""
+    addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
+    for address in addresses:
+        public_ip = address.get('PublicIp')
+        allocation_id = address.get('AllocationId')
+
+        # Attempt to disassociate if an association exists
+        if 'AssociationId' in address:
+            association_id = address['AssociationId']
+            try:
+                logger.info(f"Disassociating Elastic IP: {public_ip}")
+                delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
+            except ClientError as e:
+                if "AuthFailure" in str(e):
+                    logger.error(f"No permission to disassociate Elastic IP {public_ip}: {e}")
+                    continue
+                else:
+                    raise
+
+        # Attempt to release the Elastic IP
+        try:
+            logger.info(f"Releasing Elastic IP: {public_ip}")
+            delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
+        except ClientError as e:
+            if "AuthFailure" in str(e):
+                logger.error(f"No permission to release Elastic IP {public_ip}: {e}")
+                continue
+            else:
+                raise
+
+disassociate_and_release_elastic_ips()
 def delete_target_group():
     try:
         response = elbv2_client.describe_target_groups(Names=[tg_name])
