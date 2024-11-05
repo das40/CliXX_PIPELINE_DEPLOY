@@ -78,13 +78,11 @@ def delete_bastion_server():
             {'Name': 'instance-state-name', 'Values': ['running', 'stopped']}
         ]
     )
-
     for reservation in bastion_instances['Reservations']:
         for instance in reservation['Instances']:
             instance_id = instance['InstanceId']
             ec2_client.terminate_instances(InstanceIds=[instance_id])
             print(f"Bastion server instance '{instance_id}' termination initiated.")
-            # Wait until instance is terminated
             waiter = ec2_client.get_waiter('instance_terminated')
             waiter.wait(InstanceIds=[instance_id])
             print(f"Bastion server instance '{instance_id}' terminated.")
@@ -93,23 +91,26 @@ def delete_rds_instance():
     try:
         rds_client.delete_db_instance(DBInstanceIdentifier=db_instance_name, SkipFinalSnapshot=True)
         print(f"RDS instance '{db_instance_name}' deletion initiated.")
-        
         wait_for_deletion(
             check_func=lambda **args: any(db['DBInstanceIdentifier'] == db_instance_name for db in rds_client.describe_db_instances()['DBInstances'])
         )
     except rds_client.exceptions.DBInstanceNotFoundFault:
-        print(f"RDS instance '{db_instance_name}' not found.")
+        print(f"RDS instance '{db_instance_name}' not found, skipping.")
     except Exception as e:
         print(f"Error deleting RDS instance: {e}")
 
 def delete_load_balancer():
-    load_balancers = elbv2_client.describe_load_balancers()
-    for lb in load_balancers['LoadBalancers']:
-        if lb['LoadBalancerName'] == lb_name:
-            lb_arn = lb['LoadBalancerArn']
-            elbv2_client.delete_load_balancer(LoadBalancerArn=lb_arn)
-            print(f"Application Load Balancer '{lb_name}' deleted.")
-            break
+    try:
+        load_balancers = elbv2_client.describe_load_balancers()
+        for lb in load_balancers['LoadBalancers']:
+            if lb['LoadBalancerName'] == lb_name:
+                lb_arn = lb['LoadBalancerArn']
+                elbv2_client.delete_load_balancer(LoadBalancerArn=lb_arn)
+                print(f"Application Load Balancer '{lb_name}' deleted.")
+                return
+        print(f"Load Balancer '{lb_name}' not found, skipping.")
+    except Exception as e:
+        print(f"Error deleting Load Balancer '{lb_name}': {e}")
 
 def delete_efs_and_mount_targets():
     try:
@@ -118,78 +119,99 @@ def delete_efs_and_mount_targets():
         
         if file_system_id:
             print(f"Found EFS '{efs_name}' with ID: {file_system_id}")
-
             mount_targets = efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']
             for mt in mount_targets:
                 mount_target_id = mt['MountTargetId']
                 efs_client.delete_mount_target(MountTargetId=mount_target_id)
                 print(f"Deleted mount target: {mount_target_id}")
-
                 wait_for_deletion(
                     check_func=lambda mt_id: any(mount['MountTargetId'] == mt_id for mount in efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']),
                     check_args={'mt_id': mount_target_id}
                 )
-
             efs_client.delete_file_system(FileSystemId=file_system_id)
-            print(f"EFS '{efs_name}' with ID: {file_system_id} deleted.")
+            print(f"EFS '{efs_name}' deleted.")
         else:
-            print(f"No EFS found with the name '{efs_name}'.")
+            print(f"No EFS found with the name '{efs_name}', skipping.")
     except Exception as e:
         print(f"Error deleting EFS or mount targets: {e}")
 
 def delete_target_group():
-    response = elbv2_client.describe_target_groups(Names=[tg_name])
-    if response['TargetGroups']:
-        tg_arn = response['TargetGroups'][0]['TargetGroupArn']
-        elbv2_client.delete_target_group(TargetGroupArn=tg_arn)
-        print(f"Target Group '{tg_name}' deleted.")
+    try:
+        response = elbv2_client.describe_target_groups(Names=[tg_name])
+        if response['TargetGroups']:
+            tg_arn = response['TargetGroups'][0]['TargetGroupArn']
+            elbv2_client.delete_target_group(TargetGroupArn=tg_arn)
+            print(f"Target Group '{tg_name}' deleted.")
+        else:
+            print(f"Target Group '{tg_name}' not found, skipping.")
+    except elbv2_client.exceptions.TargetGroupNotFoundException:
+        print(f"Target Group '{tg_name}' not found, skipping.")
+    except Exception as e:
+        print(f"Error deleting Target Group: {e}")
 
 def delete_route53_record():
-    response = route53_client.list_resource_record_sets(HostedZoneId=hosted_zone_id)
-    for record in response['ResourceRecordSets']:
-        if record['Name'].rstrip('.') == record_name:
-            route53_client.change_resource_record_sets(
-                HostedZoneId=hosted_zone_id,
-                ChangeBatch={
-                    'Changes': [{'Action': 'DELETE', 'ResourceRecordSet': record}]
-                }
-            )
-            print(f"Record '{record_name}' deleted.")
-            break
+    try:
+        response = route53_client.list_resource_record_sets(HostedZoneId=hosted_zone_id)
+        for record in response['ResourceRecordSets']:
+            if record['Name'].rstrip('.') == record_name:
+                route53_client.change_resource_record_sets(
+                    HostedZoneId=hosted_zone_id,
+                    ChangeBatch={'Changes': [{'Action': 'DELETE', 'ResourceRecordSet': record}]}
+                )
+                print(f"Record '{record_name}' deleted.")
+                return
+        print(f"Record '{record_name}' not found, skipping.")
+    except Exception as e:
+        print(f"Error deleting Route 53 record: {e}")
 
 def delete_autoscaling_group():
-    autoscaling_client.delete_auto_scaling_group(
-        AutoScalingGroupName=autoscaling_group_name,
-        ForceDelete=True
-    )
-    while True:
-        asg_status = autoscaling_client.describe_auto_scaling_groups(AutoScalingGroupNames=[autoscaling_group_name])
-        if not asg_status['AutoScalingGroups']:
-            print(f"Auto Scaling Group '{autoscaling_group_name}' deleted successfully.")
-            break
-        time.sleep(30)
+    try:
+        autoscaling_client.delete_auto_scaling_group(AutoScalingGroupName=autoscaling_group_name, ForceDelete=True)
+        print(f"Auto Scaling Group '{autoscaling_group_name}' deletion initiated.")
+        wait_for_deletion(
+            check_func=lambda **args: any(asg['AutoScalingGroupName'] == autoscaling_group_name for asg in autoscaling_client.describe_auto_scaling_groups()['AutoScalingGroups'])
+        )
+    except autoscaling_client.exceptions.ResourceInUseFault:
+        print(f"Auto Scaling Group '{autoscaling_group_name}' not found, skipping.")
+    except Exception as e:
+        print(f"Error deleting Auto Scaling Group: {e}")
 
 def delete_launch_template():
-    response = ec2_client.describe_launch_templates(Filters=[{'Name': 'launch-template-name', 'Values': [launch_template_name]}])
-    if response['LaunchTemplates']:
-        launch_template_id = response['LaunchTemplates'][0]['LaunchTemplateId']
-        ec2_client.delete_launch_template(LaunchTemplateId=launch_template_id)
-        print(f"Launch Template '{launch_template_name}' deleted.")
+    try:
+        response = ec2_client.describe_launch_templates(Filters=[{'Name': 'launch-template-name', 'Values': [launch_template_name]}])
+        if response['LaunchTemplates']:
+            launch_template_id = response['LaunchTemplates'][0]['LaunchTemplateId']
+            ec2_client.delete_launch_template(LaunchTemplateId=launch_template_id)
+            print(f"Launch Template '{launch_template_name}' deleted.")
+        else:
+            print(f"Launch Template '{launch_template_name}' not found, skipping.")
+    except Exception as e:
+        print(f"Error deleting Launch Template: {e}")
 
 def delete_security_groups():
     for sg_name in [public_sg_name, private_sg_name]:
-        security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'group-name', 'Values': [sg_name]}])
-        if security_groups['SecurityGroups']:
-            sg_id = security_groups['SecurityGroups'][0]['GroupId']
-            ec2_client.delete_security_group(GroupId=sg_id)
-            print(f"Security Group '{sg_name}' deleted.")
+        try:
+            security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'group-name', 'Values': [sg_name]}])
+            if security_groups['SecurityGroups']:
+                sg_id = security_groups['SecurityGroups'][0]['GroupId']
+                ec2_client.delete_security_group(GroupId=sg_id)
+                print(f"Security Group '{sg_name}' deleted.")
+            else:
+                print(f"Security Group '{sg_name}' not found, skipping.")
+        except Exception as e:
+            print(f"Error deleting Security Group '{sg_name}': {e}")
 
 def delete_db_subnet_group():
-    response = rds_client.describe_db_subnet_groups()
-    db_subnet_group_exists = any(subnet['DBSubnetGroupName'] == DBSubnetGroupName for subnet in response['DBSubnetGroups'])
-    if db_subnet_group_exists:
-        rds_client.delete_db_subnet_group(DBSubnetGroupName=DBSubnetGroupName)
-        print(f"DB Subnet Group '{DBSubnetGroupName}' deleted.")
+    try:
+        response = rds_client.describe_db_subnet_groups()
+        db_subnet_group_exists = any(subnet['DBSubnetGroupName'] == DBSubnetGroupName for subnet in response['DBSubnetGroups'])
+        if db_subnet_group_exists:
+            rds_client.delete_db_subnet_group(DBSubnetGroupName=DBSubnetGroupName)
+            print(f"DB Subnet Group '{DBSubnetGroupName}' deleted.")
+        else:
+            print(f"DB Subnet Group '{DBSubnetGroupName}' not found, skipping.")
+    except Exception as e:
+        print(f"Error deleting DB Subnet Group: {e}")
 
 def disassociate_and_release_elastic_ips():
     addresses = ec2_client.describe_addresses()['Addresses']
@@ -213,18 +235,25 @@ def delete_nat_gateways(vpc_id):
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways']
     for nat_gw in nat_gateways:
         nat_gw_id = nat_gw['NatGatewayId']
-        ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
-        print(f"Deleting NAT Gateway: {nat_gw_id}")
-        
-        wait_for_deletion(lambda: any(ng['NatGatewayId'] == nat_gw_id for ng in ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways']))
+        try:
+            ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
+            print(f"Deleting NAT Gateway: {nat_gw_id}")
+            wait_for_deletion(
+                check_func=lambda: any(ng['NatGatewayId'] == nat_gw_id for ng in ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways'])
+            )
+        except Exception as e:
+            print(f"Error deleting NAT Gateway '{nat_gw_id}': {e}")
 
 def delete_internet_gateways(vpc_id):
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])['InternetGateways']
     for igw in igws:
         igw_id = igw['InternetGatewayId']
-        ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
-        ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
-        print(f"Deleted Internet Gateway: {igw_id}")
+        try:
+            ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
+            ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
+            print(f"Deleted Internet Gateway: {igw_id}")
+        except Exception as e:
+            print(f"Error deleting Internet Gateway '{igw_id}': {e}")
 
 def delete_vpc():
     vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'tag:Name', 'Values': [vpc_name]}])
@@ -275,5 +304,9 @@ delete_target_group()
 delete_route53_record()
 delete_autoscaling_group()
 delete_launch_template()
+delete_security_groups()
 delete_db_subnet_group()
+disassociate_and_release_elastic_ips()
+delete_nat_gateways()
+delete_internet_gateways()
 delete_vpc()
