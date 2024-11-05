@@ -17,29 +17,29 @@ assumed_role_object = sts_client.assume_role(
 credentials = assumed_role_object['Credentials']
 
 # Create boto3 clients with assumed role credentials
-ec2_client = boto3.client('ec2', region_name="us-east-1", 
-                          aws_access_key_id=credentials['AccessKeyId'], 
-                          aws_secret_access_key=credentials['SecretAccessKey'], 
+ec2_client = boto3.client('ec2', region_name="us-east-1",
+                          aws_access_key_id=credentials['AccessKeyId'],
+                          aws_secret_access_key=credentials['SecretAccessKey'],
                           aws_session_token=credentials['SessionToken'])
-elbv2_client = boto3.client('elbv2', region_name="us-east-1", 
-                            aws_access_key_id=credentials['AccessKeyId'], 
-                            aws_secret_access_key=credentials['SecretAccessKey'], 
+elbv2_client = boto3.client('elbv2', region_name="us-east-1",
+                            aws_access_key_id=credentials['AccessKeyId'],
+                            aws_secret_access_key=credentials['SecretAccessKey'],
                             aws_session_token=credentials['SessionToken'])
-rds_client = boto3.client('rds', region_name="us-east-1", 
-                          aws_access_key_id=credentials['AccessKeyId'], 
-                          aws_secret_access_key=credentials['SecretAccessKey'], 
+rds_client = boto3.client('rds', region_name="us-east-1",
+                          aws_access_key_id=credentials['AccessKeyId'],
+                          aws_secret_access_key=credentials['SecretAccessKey'],
                           aws_session_token=credentials['SessionToken'])
-efs_client = boto3.client('efs', region_name="us-east-1", 
-                          aws_access_key_id=credentials['AccessKeyId'], 
-                          aws_secret_access_key=credentials['SecretAccessKey'], 
+efs_client = boto3.client('efs', region_name="us-east-1",
+                          aws_access_key_id=credentials['AccessKeyId'],
+                          aws_secret_access_key=credentials['SecretAccessKey'],
                           aws_session_token=credentials['SessionToken'])
-route53_client = boto3.client('route53', 
-                              aws_access_key_id=credentials['AccessKeyId'], 
-                              aws_secret_access_key=credentials['SecretAccessKey'], 
+route53_client = boto3.client('route53',
+                              aws_access_key_id=credentials['AccessKeyId'],
+                              aws_secret_access_key=credentials['SecretAccessKey'],
                               aws_session_token=credentials['SessionToken'])
-autoscaling_client = boto3.client('autoscaling', region_name="us-east-1", 
-                                  aws_access_key_id=credentials['AccessKeyId'], 
-                                  aws_secret_access_key=credentials['SecretAccessKey'], 
+autoscaling_client = boto3.client('autoscaling', region_name="us-east-1",
+                                  aws_access_key_id=credentials['AccessKeyId'],
+                                  aws_secret_access_key=credentials['SecretAccessKey'],
                                   aws_session_token=credentials['SessionToken'])
 
 # Resource identifiers
@@ -80,8 +80,6 @@ def delete_rds_instance():
         else:
             logger.error(f"Failed to delete RDS Instance: {e}")
 
-delete_with_retries(delete_rds_instance)
-
 def delete_load_balancer():
     try:
         load_balancers = elbv2_client.describe_load_balancers(Names=[lb_name])
@@ -93,8 +91,6 @@ def delete_load_balancer():
             logger.info(f"Load Balancer '{lb_name}' not found, skipping.")
         else:
             logger.error(f"Failed to delete Load Balancer: {e}")
-
-delete_with_retries(delete_load_balancer)
 
 def delete_efs_and_mount_targets():
     try:
@@ -117,8 +113,6 @@ def delete_efs_and_mount_targets():
         else:
             logger.error(f"Failed to delete EFS or its mount targets: {e}")
 
-delete_with_retries(delete_efs_and_mount_targets)
-
 def delete_target_group():
     try:
         response = elbv2_client.describe_target_groups(Names=[tg_name])
@@ -131,8 +125,6 @@ def delete_target_group():
         else:
             logger.error(f"Failed to delete Target Group: {e}")
 
-delete_with_retries(delete_target_group)
-
 def delete_autoscaling_group():
     try:
         autoscaling_client.delete_auto_scaling_group(AutoScalingGroupName=autoscaling_group_name, ForceDelete=True)
@@ -142,8 +134,6 @@ def delete_autoscaling_group():
             logger.info(f"Auto Scaling Group '{autoscaling_group_name}' not found, skipping.")
         else:
             logger.error(f"Failed to delete Auto Scaling Group: {e}")
-
-delete_with_retries(delete_autoscaling_group)
 
 def delete_launch_template():
     try:
@@ -156,8 +146,6 @@ def delete_launch_template():
             logger.info(f"Launch Template '{launch_template_name}' not found, skipping.")
     except ClientError as e:
         logger.error(f"Failed to delete Launch Template: {e}")
-
-delete_with_retries(delete_launch_template)
 
 def delete_route53_record():
     try:
@@ -173,39 +161,17 @@ def delete_route53_record():
     except ClientError as e:
         logger.error(f"Failed to delete Route 53 record: {e}")
 
-delete_with_retries(delete_route53_record)
-
 def disassociate_and_release_elastic_ips():
     addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
     for address in addresses:
         public_ip = address.get('PublicIp')
         allocation_id = address.get('AllocationId')
-
-        # Attempt to disassociate if an association exists
         if 'AssociationId' in address:
             association_id = address['AssociationId']
-            try:
-                logger.info(f"Disassociating Elastic IP: {public_ip}")
-                delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
-            except ClientError as e:
-                if "AuthFailure" in str(e):
-                    logger.error(f"No permission to disassociate Elastic IP {public_ip}: {e}")
-                    continue  # Skip if no permission, but continue with other IPs
-                else:
-                    raise
-
-        # Attempt to release the Elastic IP
-        try:
-            logger.info(f"Releasing Elastic IP: {public_ip}")
-            delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
-        except ClientError as e:
-            if "AuthFailure" in str(e):
-                logger.error(f"No permission to release Elastic IP {public_ip}: {e}")
-                continue
-            else:
-                raise
-
-disassociate_and_release_elastic_ips()
+            logger.info(f"Disassociating Elastic IP: {public_ip}")
+            delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
+        logger.info(f"Releasing Elastic IP: {public_ip}")
+        delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
 
 def delete_nat_gateways(vpc_id):
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
@@ -213,48 +179,21 @@ def delete_nat_gateways(vpc_id):
         nat_gw_id = nat_gw['NatGatewayId']
         logger.info(f"Deleting NAT Gateway: {nat_gw_id}")
         delete_with_retries(ec2_client.delete_nat_gateway, NatGatewayId=nat_gw_id)
-        wait_for_nat_gateway_deletion(nat_gw_id)
-
-def wait_for_nat_gateway_deletion(nat_gw_id):
-    while True:
-        try:
-            response = ec2_client.describe_nat_gateways(NatGatewayIds=[nat_gw_id])
-            state = response['NatGateways'][0]['State']
-            if state == 'deleted':
-                logger.info(f"NAT Gateway {nat_gw_id} has been deleted.")
-                break
-            else:
-                logger.info(f"NAT Gateway {nat_gw_id} is in state '{state}'. Waiting for deletion...")
-                time.sleep(10)
-        except ClientError as e:
-            if 'NatGatewayNotFound' in str(e):
-                logger.info(f"NAT Gateway {nat_gw_id} not found, assumed deleted.")
-                break
-            else:
-                raise e
-
-delete_nat_gateways(vpc_id)
 
 def delete_network_interfaces(subnet_id):
     enis = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
     for eni in enis['NetworkInterfaces']:
         eni_id = eni['NetworkInterfaceId']
-        logger.info(f"Detaching and deleting network interface: {eni_id}")
-        try:
-            # Detach and delete network interface if attached
-            if 'Attachment' in eni:
-                ec2_client.detach_network_interface(AttachmentId=eni['Attachment']['AttachmentId'], Force=True)
-            delete_with_retries(ec2_client.delete_network_interface, NetworkInterfaceId=eni_id)
-        except ClientError as e:
-            logger.error(f"Failed to delete network interface {eni_id}: {e}")
-            continue
+        logger.info(f"Deleting network interface: {eni_id}")
+        if 'Attachment' in eni:
+            ec2_client.detach_network_interface(AttachmentId=eni['Attachment']['AttachmentId'], Force=True)
+        delete_with_retries(ec2_client.delete_network_interface, NetworkInterfaceId=eni_id)
 
 def delete_route_tables(vpc_id):
     route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for rt in route_tables['RouteTables']:
         rt_id = rt['RouteTableId']
-        associations = rt.get('Associations', [])
-        if not any(assoc.get('Main', False) for assoc in associations):
+        if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
             logger.info(f"Deleting Route Table: {rt_id}")
             delete_with_retries(ec2_client.delete_route_table, RouteTableId=rt_id)
 
@@ -263,30 +202,14 @@ def delete_subnets(vpc_id):
     for subnet in subnets['Subnets']:
         subnet_id = subnet['SubnetId']
         logger.info(f"Deleting Subnet: {subnet_id}")
-        
         delete_network_interfaces(subnet_id)
-        
-        try:
-            delete_with_retries(ec2_client.delete_subnet, SubnetId=subnet_id)
-        except ClientError as e:
-            if "DependencyViolation" in str(e):
-                logger.error(f"Could not delete subnet {subnet_id} due to dependencies.")
-                continue
-            else:
-                raise
+        delete_with_retries(ec2_client.delete_subnet, SubnetId=subnet_id)
 
 def delete_internet_gateways(vpc_id):
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
     for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
-        
-        addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])
-        for address in addresses['Addresses']:
-            if address.get('AssociationId'):
-                logger.info(f"Disassociating Elastic IP: {address['PublicIp']}")
-                delete_with_retries(ec2_client.disassociate_address, AssociationId=address['AssociationId'])
-        
         delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
         delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
 
@@ -318,6 +241,14 @@ vpcs = ec2_client.describe_vpcs(
 if vpcs['Vpcs']:
     vpc_id = vpcs['Vpcs'][0]['VpcId']
     logger.info(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
+    delete_rds_instance()
+    delete_load_balancer()
+    delete_efs_and_mount_targets()
+    delete_target_group()
+    delete_autoscaling_group()
+    delete_launch_template()
+    delete_route53_record()
+    disassociate_and_release_elastic_ips()
     delete_vpc(vpc_id)
 else:
     logger.info(f"No VPC found with CIDR block {vpc_cidr_block} and Name '{vpc_name}'")
