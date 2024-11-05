@@ -92,6 +92,28 @@ def delete_load_balancer():
         else:
             logger.error(f"Failed to delete Load Balancer: {e}")
 
+def delete_bastion_server(vpc_id):
+    """Terminate any instances tagged as Bastion Server within the specified VPC."""
+    try:
+        response = ec2_client.describe_instances(
+            Filters=[
+                {'Name': 'vpc-id', 'Values': [vpc_id]},
+                {'Name': f'tag:{bastion_tag_key}', 'Values': [bastion_tag_value]}
+            ]
+        )
+        for reservation in response['Reservations']:
+            for instance in reservation['Instances']:
+                instance_id = instance['InstanceId']
+                logger.info(f"Terminating Bastion Server instance: {instance_id}")
+                ec2_client.terminate_instances(InstanceIds=[instance_id])
+                
+                # Wait until the instance is terminated
+                waiter = ec2_client.get_waiter('instance_terminated')
+                waiter.wait(InstanceIds=[instance_id])
+                logger.info(f"Bastion Server instance {instance_id} terminated.")
+    except ClientError as e:
+        logger.error(f"Failed to delete Bastion Server: {e}")
+
 def delete_efs_and_mount_targets():
     """Deletes the EFS and waits for mount targets to delete before proceeding."""
     try:
@@ -161,6 +183,9 @@ def disassociate_and_release_elastic_ips():
                 raise
 
 disassociate_and_release_elastic_ips()
+
+
+
 def delete_target_group():
     try:
         response = elbv2_client.describe_target_groups(Names=[tg_name])
@@ -291,6 +316,7 @@ if vpcs['Vpcs']:
     logger.info(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
     delete_rds_instance()
     delete_load_balancer()
+    delete_bastion_server(vpc_id)
     delete_efs_and_mount_targets()
     delete_target_group()
     delete_autoscaling_group()
