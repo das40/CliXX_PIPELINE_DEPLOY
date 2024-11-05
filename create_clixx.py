@@ -1,4 +1,3 @@
-my create script 
 import boto3
 import logging
 import time, base64
