@@ -46,7 +46,7 @@ autoscaling_client = boto3.client('autoscaling', region_name="us-east-1",
 db_instance_name = 'wordpressdbclixx'
 lb_name = 'CLIXX-LoadBalancer'
 efs_name = 'CLiXX-EFS'
-tg_name = 'CLIXX-TG'
+tg_name = 'CLiXX-TG'
 autoscaling_group_name = 'CLiXX-ASG'
 launch_template_name = 'CLiXX-LT'
 hosted_zone_id = 'Z0881876FFUR3OKRNM20'
@@ -56,8 +56,8 @@ vpc_cidr_block = '10.0.0.0/16'
 bastion_tag_key = 'Name'
 bastion_tag_value = 'BastionServer'
 
+# Retry function
 RETRY_LIMIT = 5
-
 def delete_with_retries(delete_func, *args, **kwargs):
     for attempt in range(RETRY_LIMIT):
         try:
@@ -94,35 +94,12 @@ def delete_load_balancer():
         else:
             logger.error(f"Failed to delete Load Balancer: {e}")
 
-def delete_bastion_server(vpc_id):
-    """Terminate any instances tagged as Bastion Server within the specified VPC."""
-    try:
-        response = ec2_client.describe_instances(
-            Filters=[
-                {'Name': 'vpc-id', 'Values': [vpc_id]},
-                {'Name': f'tag:{bastion_tag_key}', 'Values': [bastion_tag_value]}
-            ]
-        )
-        for reservation in response['Reservations']:
-            for instance in reservation['Instances']:
-                instance_id = instance['InstanceId']
-                logger.info(f"Terminating Bastion Server instance: {instance_id}")
-                ec2_client.terminate_instances(InstanceIds=[instance_id])
-                
-                # Wait until the instance is terminated
-                waiter = ec2_client.get_waiter('instance_terminated')
-                waiter.wait(InstanceIds=[instance_id])
-                logger.info(f"Bastion Server instance {instance_id} terminated.")
-    except ClientError as e:
-        logger.error(f"Failed to delete Bastion Server: {e}")
-
 def delete_efs_and_mount_targets():
-    """Deletes the EFS and waits for mount targets to delete before proceeding."""
     try:
         fs_info = efs_client.describe_file_systems()
         for fs in fs_info['FileSystems']:
             tags = efs_client.list_tags_for_resource(ResourceId=fs['FileSystemId'])['Tags']
-            if any(tag['Key'] == 'Name' and tag['Value'] == 'CLiXX-EFS' for tag in tags):
+            if any(tag['Key'] == 'Name' and tag['Value'] == efs_name for tag in tags):
                 file_system_id = fs['FileSystemId']
                 mount_targets = efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']
                 
@@ -147,46 +124,9 @@ def delete_efs_and_mount_targets():
                 break
     except ClientError as e:
         if "FileSystemNotFound" in str(e):
-            logger.info(f"EFS 'CLiXX-EFS' not found, skipping.")
+            logger.info(f"EFS '{efs_name}' not found, skipping.")
         else:
             logger.error(f"Failed to delete EFS or its mount targets: {e}")
-
-delete_with_retries(delete_efs_and_mount_targets)
-
-def disassociate_and_release_elastic_ips():
-    """Disassociates and releases Elastic IPs, with error handling for permissions."""
-    addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
-    for address in addresses:
-        public_ip = address.get('PublicIp')
-        allocation_id = address.get('AllocationId')
-
-        # Attempt to disassociate if an association exists
-        if 'AssociationId' in address:
-            association_id = address['AssociationId']
-            try:
-                logger.info(f"Disassociating Elastic IP: {public_ip}")
-                delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
-            except ClientError as e:
-                if "AuthFailure" in str(e):
-                    logger.error(f"No permission to disassociate Elastic IP {public_ip}: {e}")
-                    continue
-                else:
-                    raise
-
-        # Attempt to release the Elastic IP
-        try:
-            logger.info(f"Releasing Elastic IP: {public_ip}")
-            delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
-        except ClientError as e:
-            if "AuthFailure" in str(e):
-                logger.error(f"No permission to release Elastic IP {public_ip}: {e}")
-                continue
-            else:
-                raise
-
-disassociate_and_release_elastic_ips()
-
-
 
 def delete_target_group():
     try:
@@ -236,18 +176,57 @@ def delete_route53_record():
     except ClientError as e:
         logger.error(f"Failed to delete Route 53 record: {e}")
 
+# Revised function to disassociate and release Elastic IPs with permission handling
 def disassociate_and_release_elastic_ips():
     addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
     for address in addresses:
         public_ip = address.get('PublicIp')
         allocation_id = address.get('AllocationId')
+
         if 'AssociationId' in address:
             association_id = address['AssociationId']
-            logger.info(f"Disassociating Elastic IP: {public_ip}")
-            delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
-        logger.info(f"Releasing Elastic IP: {public_ip}")
-        delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
+            try:
+                logger.info(f"Disassociating Elastic IP: {public_ip}")
+                delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
+            except ClientError as e:
+                if "AuthFailure" in str(e):
+                    logger.error(f"No permission to disassociate Elastic IP {public_ip}: {e}")
+                    continue
+                else:
+                    raise
 
+        try:
+            logger.info(f"Releasing Elastic IP: {public_ip}")
+            delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
+        except ClientError as e:
+            if "AuthFailure" in str(e):
+                logger.error(f"No permission to release Elastic IP {public_ip}: {e}")
+                continue
+            else:
+                raise
+
+# Function to delete Bastion Server
+def delete_bastion_server(vpc_id):
+    try:
+        response = ec2_client.describe_instances(
+            Filters=[
+                {'Name': 'vpc-id', 'Values': [vpc_id]},
+                {'Name': f'tag:{bastion_tag_key}', 'Values': [bastion_tag_value]}
+            ]
+        )
+        for reservation in response['Reservations']:
+            for instance in reservation['Instances']:
+                instance_id = instance['InstanceId']
+                logger.info(f"Terminating Bastion Server instance: {instance_id}")
+                ec2_client.terminate_instances(InstanceIds=[instance_id])
+                
+                waiter = ec2_client.get_waiter('instance_terminated')
+                waiter.wait(InstanceIds=[instance_id])
+                logger.info(f"Bastion Server instance {instance_id} terminated.")
+    except ClientError as e:
+        logger.error(f"Failed to delete Bastion Server: {e}")
+
+# Other delete functions for resources
 def delete_nat_gateways(vpc_id):
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
     for nat_gw in nat_gateways['NatGateways']:
@@ -263,14 +242,6 @@ def delete_network_interfaces(subnet_id):
         if 'Attachment' in eni:
             ec2_client.detach_network_interface(AttachmentId=eni['Attachment']['AttachmentId'], Force=True)
         delete_with_retries(ec2_client.delete_network_interface, NetworkInterfaceId=eni_id)
-
-def delete_route_tables(vpc_id):
-    route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-    for rt in route_tables['RouteTables']:
-        rt_id = rt['RouteTableId']
-        if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
-            logger.info(f"Deleting Route Table: {rt_id}")
-            delete_with_retries(ec2_client.delete_route_table, RouteTableId=rt_id)
 
 def delete_subnets(vpc_id):
     subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
@@ -297,28 +268,26 @@ def delete_security_groups(vpc_id):
             delete_with_retries(ec2_client.delete_security_group, GroupId=sg_id)
 
 def delete_vpc(vpc_id):
+    delete_bastion_server(vpc_id)
     delete_internet_gateways(vpc_id)
     delete_nat_gateways(vpc_id)
     delete_subnets(vpc_id)
-    delete_route_tables(vpc_id)
     delete_security_groups(vpc_id)
     logger.info(f"Deleting VPC: {vpc_id}")
     delete_with_retries(ec2_client.delete_vpc, VpcId=vpc_id)
 
-# Main delete flow for VPC
+# Main flow
 vpcs = ec2_client.describe_vpcs(
     Filters=[
         {'Name': 'cidr', 'Values': [vpc_cidr_block]},
         {'Name': 'tag:Name', 'Values': [vpc_name]}
     ]
 )
-
 if vpcs['Vpcs']:
     vpc_id = vpcs['Vpcs'][0]['VpcId']
     logger.info(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
     delete_rds_instance()
     delete_load_balancer()
-    delete_bastion_server(vpc_id)
     delete_efs_and_mount_targets()
     delete_target_group()
     delete_autoscaling_group()
