@@ -57,6 +57,23 @@ DBSubnetGroupName = 'clixxstackdbsubnetgroup'
 vpc_name = 'CLIXXSTACKVPC'
 vpc_cidr_block = '10.0.0.0/16'
 
+
+RETRY_LIMIT = 5
+
+def delete_with_retries(delete_func, *args, **kwargs):
+    for attempt in range(RETRY_LIMIT):
+        try:
+            delete_func(*args, **kwargs)
+            return
+        except ClientError as e:
+            logger.warning(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < RETRY_LIMIT - 1:
+                time.sleep(10)
+            else:
+                logger.error(f"Failed to delete after {RETRY_LIMIT} attempts.")
+                raise
+
+
 def delete_rds_instance():
     try:
         rds_client.delete_db_instance(DBInstanceIdentifier=db_instance_name, SkipFinalSnapshot=True)
@@ -66,6 +83,10 @@ def delete_rds_instance():
             logger.info(f"RDS instance '{db_instance_name}' not found, skipping.")
         else:
             logger.error(f"Failed to delete RDS Instance: {e}")
+
+# Use delete_with_retries for RDS instance deletion
+delete_with_retries(delete_rds_instance)
+
 
 def delete_load_balancer():
     try:
@@ -78,6 +99,9 @@ def delete_load_balancer():
             logger.info(f"Load Balancer '{lb_name}' not found, skipping.")
         else:
             logger.error(f"Failed to delete Load Balancer: {e}")
+# Wrap the delete function in delete_with_retries
+delete_with_retries(delete_load_balancer)
+
 
 def delete_efs_and_mount_targets():
     try:
@@ -99,6 +123,7 @@ def delete_efs_and_mount_targets():
             logger.info(f"EFS '{efs_name}' not found, skipping.")
         else:
             logger.error(f"Failed to delete EFS or its mount targets: {e}")
+delete_with_retries(delete_efs_and_mount_targets)
 
 def delete_target_group():
     try:
