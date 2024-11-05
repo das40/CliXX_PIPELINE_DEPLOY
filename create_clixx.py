@@ -58,6 +58,35 @@ clixx_record_name = "dev.clixx-dasola.com"
 
 
 # Function to create subnets and log status
+import boto3
+import logging
+import time
+import base64
+from botocore.exceptions import ClientError
+
+# Set up logging configuration
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger()
+
+# Assume Role to interact with AWS resources
+clixx_sts_client = boto3.client('sts')
+clixx_assumed_role_object = clixx_sts_client.assume_role(
+    RoleArn='arn:aws:iam::619071313311:role/Engineer',
+    RoleSessionName='mysession'
+)
+clixx_credentials = clixx_assumed_role_object['Credentials']
+
+# Create clients with assumed role credentials
+clixx_ec2_client = boto3.client('ec2', region_name='us-east-1',
+                                aws_access_key_id=clixx_credentials['AccessKeyId'],
+                                aws_secret_access_key=clixx_credentials['SecretAccessKey'],
+                                aws_session_token=clixx_credentials['SessionToken'])
+clixx_ec2_resource = boto3.resource('ec2', region_name='us-east-1',
+                                     aws_access_key_id=clixx_credentials['AccessKeyId'],
+                                     aws_secret_access_key=clixx_credentials['SecretAccessKey'],
+                                     aws_session_token=clixx_credentials['SessionToken'])
+
+# Function to create subnets with retry for tagging
 def create_subnet(clixx_vpc_id, cidr_block, az, name_tag):
     response = clixx_ec2_client.create_subnet(
         VpcId=clixx_vpc_id,
@@ -65,8 +94,20 @@ def create_subnet(clixx_vpc_id, cidr_block, az, name_tag):
         AvailabilityZone=az
     )
     subnet_id = response['Subnet']['SubnetId']
-    clixx_ec2_client.create_tags(Resources=[subnet_id], Tags=[{'Key': 'Name', 'Value': name_tag}])
-    logger.info(f"Subnet {name_tag} created: {subnet_id}")
+
+    # Retry tagging operation up to 3 times
+    for attempt in range(3):
+        try:
+            clixx_ec2_client.create_tags(Resources=[subnet_id], Tags=[{'Key': 'Name', 'Value': name_tag}])
+            logger.info(f"Subnet {name_tag} created and tagged: {subnet_id}")
+            break
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'InvalidSubnetID.NotFound':
+                logger.warning(f"Retrying tag for Subnet {subnet_id}, attempt {attempt + 1}")
+                time.sleep(2)
+            else:
+                raise e
+
     return subnet_id
 
 # Variables for VPC and subnets
@@ -89,7 +130,7 @@ if not clixx_vpcs['Vpcs']:
 else:
     clixx_vpc_id = clixx_vpcs['Vpcs'][0]['VpcId']
     logger.info(f"VPC already exists: {clixx_vpc_id}")
-
+    
 # Create public subnets
 clixx_public_subnet_ids = []
 for i, cidr in enumerate(clixx_public_subnets_cidrs):
