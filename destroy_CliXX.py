@@ -145,16 +145,15 @@ delete_with_retries(delete_autoscaling_group)
 def delete_launch_template():
     try:
         response = ec2_client.describe_launch_templates(Filters=[{'Name': 'launch-template-name', 'Values': [launch_template_name]}])
-        launch_template_id = response['LaunchTemplates'][0]['LaunchTemplateId']
-        ec2_client.delete_launch_template(LaunchTemplateId=launch_template_id)
-        logger.info(f"Launch Template '{launch_template_name}' deleted.")
-    except ClientError as e:
-        if "InvalidLaunchTemplateName.NotFoundException" in str(e):
-            logger.info(f"Launch Template '{launch_template_name}' not found, skipping.")
+        if response['LaunchTemplates']:
+            launch_template_id = response['LaunchTemplates'][0]['LaunchTemplateId']
+            ec2_client.delete_launch_template(LaunchTemplateId=launch_template_id)
+            logger.info(f"Launch Template '{launch_template_name}' deleted.")
         else:
-            logger.error(f"Failed to delete Launch Template: {e}")
+            logger.info(f"Launch Template '{launch_template_name}' not found, skipping.")
+    except ClientError as e:
+        logger.error(f"Failed to delete Launch Template: {e}")
 
-delete_with_retries(delete_launch_template)
 
 def delete_route53_record():
     try:
