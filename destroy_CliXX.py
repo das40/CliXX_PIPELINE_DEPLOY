@@ -53,6 +53,8 @@ hosted_zone_id = 'Z0881876FFUR3OKRNM20'
 record_name = 'dev.clixx-dasola.com'
 vpc_name = 'CLIXXSTACKVPC'
 vpc_cidr_block = '10.0.0.0/16'
+bastion_tag_key = 'Name'
+bastion_tag_value = 'BastionServer'
 
 RETRY_LIMIT = 5
 
