@@ -157,6 +157,7 @@ def delete_launch_template():
     except ClientError as e:
         logger.error(f"Failed to delete Launch Template: {e}")
 
+delete_with_retries(delete_launch_template)
 
 def delete_route53_record():
     try:
@@ -173,7 +174,6 @@ def delete_route53_record():
         logger.error(f"Failed to delete Route 53 record: {e}")
 
 delete_with_retries(delete_route53_record)
-
 
 def disassociate_and_release_elastic_ips():
     addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
@@ -205,27 +205,7 @@ def disassociate_and_release_elastic_ips():
             else:
                 raise
 
-
-def delete_internet_gateways(vpc_id):
-    disassociate_and_release_elastic_ips()  # Ensure IPs are disassociated first
-    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
-    for igw in igws['InternetGateways']:
-        igw_id = igw['InternetGatewayId']
-        logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
-        
-        # Detach the gateway
-        try:
-            delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
-        except ClientError as e:
-            if "DependencyViolation" in str(e):
-                logger.error(f"DependencyViolation: Could not detach IGW {igw_id}. Remaining dependencies must be cleared.")
-                continue  # Proceed with other gateways if there's a dependency issue
-            else:
-                raise
-
-        # Delete the gateway
-        delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
-
+disassociate_and_release_elastic_ips()
 
 def delete_nat_gateways(vpc_id):
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
@@ -253,12 +233,21 @@ def wait_for_nat_gateway_deletion(nat_gw_id):
             else:
                 raise e
 
-def delete_subnets(vpc_id):
-    subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-    for subnet in subnets['Subnets']:
-        subnet_id = subnet['SubnetId']
-        logger.info(f"Deleting Subnet: {subnet_id}")
-        delete_with_retries(ec2_client.delete_subnet, SubnetId=subnet_id)
+delete_nat_gateways(vpc_id)
+
+def delete_network_interfaces(subnet_id):
+    enis = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
+    for eni in enis['NetworkInterfaces']:
+        eni_id = eni['NetworkInterfaceId']
+        logger.info(f"Detaching and deleting network interface: {eni_id}")
+        try:
+            # Detach and delete network interface if attached
+            if 'Attachment' in eni:
+                ec2_client.detach_network_interface(AttachmentId=eni['Attachment']['AttachmentId'], Force=True)
+            delete_with_retries(ec2_client.delete_network_interface, NetworkInterfaceId=eni_id)
+        except ClientError as e:
+            logger.error(f"Failed to delete network interface {eni_id}: {e}")
+            continue
 
 def delete_route_tables(vpc_id):
     route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
@@ -268,6 +257,38 @@ def delete_route_tables(vpc_id):
         if not any(assoc.get('Main', False) for assoc in associations):
             logger.info(f"Deleting Route Table: {rt_id}")
             delete_with_retries(ec2_client.delete_route_table, RouteTableId=rt_id)
+
+def delete_subnets(vpc_id):
+    subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for subnet in subnets['Subnets']:
+        subnet_id = subnet['SubnetId']
+        logger.info(f"Deleting Subnet: {subnet_id}")
+        
+        delete_network_interfaces(subnet_id)
+        
+        try:
+            delete_with_retries(ec2_client.delete_subnet, SubnetId=subnet_id)
+        except ClientError as e:
+            if "DependencyViolation" in str(e):
+                logger.error(f"Could not delete subnet {subnet_id} due to dependencies.")
+                continue
+            else:
+                raise
+
+def delete_internet_gateways(vpc_id):
+    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+    for igw in igws['InternetGateways']:
+        igw_id = igw['InternetGatewayId']
+        logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
+        
+        addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])
+        for address in addresses['Addresses']:
+            if address.get('AssociationId'):
+                logger.info(f"Disassociating Elastic IP: {address['PublicIp']}")
+                delete_with_retries(ec2_client.disassociate_address, AssociationId=address['AssociationId'])
+        
+        delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
+        delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
 
 def delete_security_groups(vpc_id):
     security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
