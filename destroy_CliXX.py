@@ -99,6 +99,29 @@ def delete_rds_instance():
     except Exception as e:
         print(f"Error deleting RDS instance: {e}")
 
+def delete_db_subnet_group():
+    try:
+        # Check if the DB subnet group exists before attempting to delete
+        response = rds_client.describe_db_subnet_groups()
+        db_subnet_group_exists = any(subnet['DBSubnetGroupName'] == DBSubnetGroupName for subnet in response['DBSubnetGroups'])
+        
+        if db_subnet_group_exists:
+            # Attempt deletion of the DB subnet group
+            rds_client.delete_db_subnet_group(DBSubnetGroupName=DBSubnetGroupName)
+            print(f"DB Subnet Group '{DBSubnetGroupName}' deletion initiated.")
+
+            # Wait until the DB subnet group is fully deleted
+            wait_for_deletion(
+                check_func=lambda **args: not any(
+                    subnet['DBSubnetGroupName'] == DBSubnetGroupName for subnet in rds_client.describe_db_subnet_groups()['DBSubnetGroups']
+                )
+            )
+        else:
+            print(f"DB Subnet Group '{DBSubnetGroupName}' not found, skipping.")
+    except Exception as e:
+        print(f"Error deleting DB Subnet Group '{DBSubnetGroupName}': {e}")
+
+
 def delete_load_balancer():
     try:
         load_balancers = elbv2_client.describe_load_balancers()
@@ -311,6 +334,7 @@ def delete_vpc():
 # Execute deletions
 delete_bastion_server()
 delete_rds_instance()
+delete_db_subnet_group()
 delete_load_balancer()
 delete_efs_and_mount_targets()
 delete_target_group()
