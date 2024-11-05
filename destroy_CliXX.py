@@ -235,6 +235,17 @@ def delete_nat_gateways(vpc_id):
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways']
     for nat_gw in nat_gateways:
         nat_gw_id = nat_gw['NatGatewayId']
+        
+        # Release associated Elastic IPs before deleting the NAT gateway
+        for address in nat_gw.get('NatGatewayAddresses', []):
+            allocation_id = address['AllocationId']
+            try:
+                ec2_client.release_address(AllocationId=allocation_id)
+                print(f"Released Elastic IP '{allocation_id}' associated with NAT Gateway '{nat_gw_id}'")
+            except Exception as e:
+                print(f"Error releasing Elastic IP '{allocation_id}': {e}")
+
+        # Now delete the NAT gateway
         try:
             ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
             print(f"Deleting NAT Gateway: {nat_gw_id}")
@@ -261,11 +272,11 @@ def delete_vpc():
         vpc_id = vpcs['Vpcs'][0]['VpcId']
         print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
-        # Delete all subnets after removing NAT gateways and internet gateways
+        # Delete NAT gateways and internet gateways first
         delete_nat_gateways(vpc_id)
         delete_internet_gateways(vpc_id)
 
-        # Delete route tables (excluding the main route table)
+        # Delete non-main route tables
         route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
         for rt in route_tables['RouteTables']:
             if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
@@ -275,7 +286,7 @@ def delete_vpc():
                 except Exception as e:
                     print(f"Failed to delete Route Table '{rt['RouteTableId']}': {e}")
 
-        # Delete security groups and Elastic IPs
+        # Delete security groups, disassociate, and release Elastic IPs
         delete_security_groups()
         disassociate_and_release_elastic_ips()
 
@@ -308,4 +319,5 @@ delete_autoscaling_group()
 delete_launch_template()
 delete_security_groups()
 delete_db_subnet_group()
-delete_vpc()  # This will call delete_nat_gateways and delete_internet_gateways with the correct vpc_id
+delete_vpc()  # This will handle NAT and Internet Gateway deletions with vpc_id
+
