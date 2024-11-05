@@ -233,25 +233,93 @@ def delete_db_subnet_group():
         print(f"DB Subnet Group '{DBSubnetGroupName}' deleted.")
 
 #################### Delete the VPC and Dependencies
-def delete_vpc():
-    vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'cidr', 'Values': [vpc_cidr_block]}, {'Name': 'tag:Name', 'Values': [vpc_name]}])
+def get_vpc_id_by_name(vpc_name):
+    """Retrieve the VPC ID using the VPC's Name tag."""
+    vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'tag:Name', 'Values': [vpc_name]}])
     if vpcs['Vpcs']:
         vpc_id = vpcs['Vpcs'][0]['VpcId']
-        print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
+        print(f"Found VPC with ID: {vpc_id}")
+        return vpc_id
+    else:
+        print(f"No VPC found with the name '{vpc_name}'")
+        return None
 
-        # 1. Detach and delete internet gateways
-        igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
-        for igw in igws['InternetGateways']:
-            igw_id = igw['InternetGatewayId']
+def wait_for_deletion(check_func, interval=10, timeout=WAIT_TIMEOUT):
+    """Wait for a resource deletion to complete with a timeout."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if not check_func():
+            print("Resource deleted successfully.")
+            return True
+        print("Waiting for resource to delete...")
+        time.sleep(interval)
+    print("Timed out waiting for resource to delete.")
+    return False
+
+def disassociate_and_release_elastic_ips():
+    """Disassociates and releases all Elastic IPs."""
+    addresses = ec2_client.describe_addresses()['Addresses']
+    for address in addresses:
+        allocation_id = address['AllocationId']
+        if 'AssociationId' in address:
+            association_id = address['AssociationId']
+            try:
+                ec2_client.disassociate_address(AssociationId=association_id)
+                print(f"Disassociated Elastic IP: {address['PublicIp']}")
+            except Exception as e:
+                print(f"Failed to disassociate Elastic IP {address['PublicIp']}: {e}")
+        
+        try:
+            ec2_client.release_address(AllocationId=allocation_id)
+            print(f"Released Elastic IP: {address['PublicIp']}")
+        except Exception as e:
+            print(f"Failed to release Elastic IP {address['PublicIp']}: {e}")
+
+def delete_nat_gateways(vpc_id):
+    """Deletes all NAT Gateways in the specified VPC."""
+    nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways']
+    for nat_gw in nat_gateways:
+        nat_gw_id = nat_gw['NatGatewayId']
+        ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
+        print(f"Deleting NAT Gateway: {nat_gw_id}")
+        
+        # Wait for NAT Gateway to delete
+        wait_for_deletion(lambda: any(ng['NatGatewayId'] == nat_gw_id for ng in ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways']))
+
+def delete_internet_gateways(vpc_id):
+    """Detaches and deletes all internet gateways in the specified VPC."""
+    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])['InternetGateways']
+    for igw in igws:
+        igw_id = igw['InternetGatewayId']
+        try:
             ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
-            ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
-            print(f"Internet Gateway '{igw_id}' detached and deleted.")
+            print(f"Detached Internet Gateway: {igw_id}")
+        except Exception as e:
+            print(f"Failed to detach Internet Gateway {igw_id}: {e}")
+        
+        ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
+        print(f"Deleted Internet Gateway: {igw_id}")
 
-        # 2. Delete NAT gateways
-        nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-        for nat_gw in nat_gateways['NatGateways']:
-            ec2_client.delete_nat_gateway(NatGatewayId=nat_gw['NatGatewayId'])
-            print(f"NAT Gateway '{nat_gw['NatGatewayId']}' deleted.")
+def delete_vpc(vpc_id):
+    """Deletes all VPC-related resources before deleting the VPC itself."""
+    print(f"Deleting all dependencies in VPC: {vpc_id}")
+    disassociate_and_release_elastic_ips()
+    delete_nat_gateways(vpc_id)
+    delete_internet_gateways(vpc_id)
+
+    # Finally, delete the VPC
+    try:
+        ec2_client.delete_vpc(VpcId=vpc_id)
+        print(f"VPC {vpc_id} deleted.")
+    except Exception as e:
+        print(f"Failed to delete VPC {vpc_id}: {e}")
+
+# Main deletion flow
+vpc_id = get_vpc_id_by_name(vpc_name)
+if vpc_id:
+    delete_vpc(vpc_id)
+else:
+    print("VPC deletion aborted.")
 
         # 3. Delete subnets
         subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
