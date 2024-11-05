@@ -169,16 +169,37 @@ def disassociate_and_release_elastic_ips():
         logger.info(f"Releasing Elastic IP: {public_ip}")
         ec2_client.release_address(AllocationId=allocation_id)
 
+def terminate_instances(vpc_id):
+    """Terminate all instances within the specified VPC."""
+    instances = ec2_client.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    instance_ids = [
+        instance['InstanceId']
+        for reservation in instances['Reservations']
+        for instance in reservation['Instances']
+    ]
+    
+    if instance_ids:
+        logger.info(f"Terminating instances: {instance_ids}")
+        ec2_client.terminate_instances(InstanceIds=instance_ids)
+        
+        # Wait for instances to terminate
+        waiter = ec2_client.get_waiter('instance_terminated')
+        waiter.wait(InstanceIds=instance_ids)
+        logger.info("All instances have been terminated.")
+    else:
+        logger.info("No instances found to terminate.")
+
 def delete_internet_gateways(vpc_id):
-    # Ensure all Elastic IPs are disassociated and released before detaching IGW
-    disassociate_and_release_elastic_ips()
-    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])['InternetGateways']
-    for igw in igws:
+    """Detach and delete internet gateways associated with the VPC."""
+    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+    for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
-        ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
-        ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
+        delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
+        delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
+
 def delete_vpc(vpc_id):
+    terminate_instances(vpc_id) 
     delete_internet_gateways(vpc_id)
     terminate_instances(vpc_id)
     delete_subnets(vpc_id)
