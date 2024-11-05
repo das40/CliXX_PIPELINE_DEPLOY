@@ -172,13 +172,25 @@ def delete_route53_record():
 
 delete_with_retries(delete_route53_record)
 
-# Delete VPC and its dependencies
 def delete_internet_gateways(vpc_id):
+    # Describe and handle any elastic IP addresses associated with the VPC
+    addresses = ec2_client.describe_addresses()
+    for address in addresses['Addresses']:
+        if 'AssociationId' in address:
+            logger.info(f"Releasing Elastic IP: {address['PublicIp']}")
+            delete_with_retries(ec2_client.disassociate_address, AssociationId=address['AssociationId'])
+            delete_with_retries(ec2_client.release_address, AllocationId=address['AllocationId'])
+
+    # Detach and delete internet gateways
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
     for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
+        
+        # Detach first
         delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
+        
+        # Then delete
         delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
 
 def delete_nat_gateways(vpc_id):
