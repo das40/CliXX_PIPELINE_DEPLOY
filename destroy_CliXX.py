@@ -315,34 +315,35 @@ def delete_vpc(vpc_id):
         print(f"Failed to delete VPC {vpc_id}: {e}")
 
 # Main deletion flow
-vpc_id = get_vpc_id_by_name(vpc_name)
-if vpc_id:
-    delete_vpc(vpc_id)
-else:
-    print("VPC deletion aborted.")
+# Delete VPC if it exists
+if vpcs['Vpcs']:
+    vpc_id = vpcs['Vpcs'][0]['VpcId']
+    print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
-# 3. Delete subnets
-subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-for subnet in subnets['Subnets']:
-    ec2_client.delete_subnet(SubnetId=subnet['SubnetId'])
-    print(f"Subnet '{subnet['SubnetId']}' deleted.")
-
-# 4. Delete route tables (except the main route table)
-route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
-for rt in route_tables['RouteTables']:
-    if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
-        ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
-        print(f"Route Table '{rt['RouteTableId']}' deleted.")
-
-# 5. Delete security groups
-delete_security_groups()
-
-# 6. Delete VPC
-ec2_client.delete_vpc(VpcId=vpc_id)
-print(f"VPC '{vpc_id}' with Name '{vpc_name}' deleted.")
+    # Delete VPC
+    ec2_client.delete_vpc(VpcId=vpc_id)
+    print(f"VPC '{vpc_id}' with Name '{vpc_name}' deleted.")
 else:
     print(f"No VPC found with CIDR block {vpc_cidr_block} and Name '{vpc_name}'")
 
+
+        # 3. Delete subnets
+        subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+        for subnet in subnets['Subnets']:
+            ec2_client.delete_subnet(SubnetId=subnet['SubnetId'])
+            print(f"Subnet '{subnet['SubnetId']}' deleted.")
+
+        # 4. Delete route tables (except the main route table)
+        route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+        for rt in route_tables['RouteTables']:
+            if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
+                ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
+                print(f"Route Table '{rt['RouteTableId']}' deleted.")
+
+        # 5. Delete security groups
+        delete_security_groups()
+
+        
 
 # Execute deletions
 delete_bastion_server() 
