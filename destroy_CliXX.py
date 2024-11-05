@@ -195,37 +195,20 @@ def disassociate_and_release_elastic_ips():
     for address in addresses:
         public_ip = address.get('PublicIp')
         allocation_id = address.get('AllocationId')
-
         if 'AssociationId' in address:
             association_id = address['AssociationId']
+            logger.info(f"Disassociating Elastic IP: {public_ip}")
             try:
-                logger.info(f"Disassociating Elastic IP: {public_ip}")
-                delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
+                ec2_client.disassociate_address(AssociationId=association_id)
             except ClientError as e:
-                if "AuthFailure" in str(e):
-                    logger.error(f"No permission to disassociate Elastic IP {public_ip}: {e}")
-                    continue
-                raise
-
-        try:
-            logger.info(f"Releasing Elastic IP: {public_ip}")
-            delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
-        except ClientError as e:
-            if "AuthFailure" in str(e):
-                logger.error(f"No permission to release Elastic IP {public_ip}: {e}")
+                logger.error(f"No permission to disassociate Elastic IP {public_ip}: {e}")
                 continue
-            else:
-                raise
-
-def delete_internet_gateways(vpc_id):
-    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
-    for igw in igws['InternetGateways']:
-        igw_id = igw['InternetGatewayId']
-        logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
-        
-        disassociate_and_release_elastic_ips()
-        delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
-        delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
+        logger.info(f"Releasing Elastic IP: {public_ip}")
+        try:
+            ec2_client.release_address(AllocationId=allocation_id)
+        except ClientError as e:
+            logger.error(f"No permission to release Elastic IP {public_ip}: {e}")
+            continue
 
 def delete_nat_gateways(vpc_id):
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
@@ -234,14 +217,57 @@ def delete_nat_gateways(vpc_id):
         logger.info(f"Deleting NAT Gateway: {nat_gw_id}")
         delete_with_retries(ec2_client.delete_nat_gateway, NatGatewayId=nat_gw_id)
 
+def delete_network_interfaces(subnet_id):
+    enis = ec2_client.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
+    for eni in enis['NetworkInterfaces']:
+        eni_id = eni['NetworkInterfaceId']
+        logger.info(f"Deleting network interface: {eni_id}")
+        if 'Attachment' in eni:
+            ec2_client.detach_network_interface(AttachmentId=eni['Attachment']['AttachmentId'], Force=True)
+        delete_with_retries(ec2_client.delete_network_interface, NetworkInterfaceId=eni_id)
+
+def delete_route_tables(vpc_id):
+    route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for rt in route_tables['RouteTables']:
+        rt_id = rt['RouteTableId']
+        if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
+            logger.info(f"Deleting Route Table: {rt_id}")
+            delete_with_retries(ec2_client.delete_route_table, RouteTableId=rt_id)
+
+def delete_subnets(vpc_id):
+    subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for subnet in subnets['Subnets']:
+        subnet_id = subnet['SubnetId']
+        logger.info(f"Deleting Subnet: {subnet_id}")
+        delete_network_interfaces(subnet_id)
+        delete_with_retries(ec2_client.delete_subnet, SubnetId=subnet_id)
+
+def delete_internet_gateways(vpc_id):
+    igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+    for igw in igws['InternetGateways']:
+        igw_id = igw['InternetGatewayId']
+        logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
+        delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
+        delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
+
+def delete_security_groups(vpc_id):
+    security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+    for sg in security_groups['SecurityGroups']:
+        if sg['GroupName'] != 'default':
+            sg_id = sg['GroupId']
+            logger.info(f"Deleting Security Group: {sg_id}")
+            delete_with_retries(ec2_client.delete_security_group, GroupId=sg_id)
+
 def delete_vpc(vpc_id):
-    delete_bastion_server(vpc_id)
     delete_internet_gateways(vpc_id)
     delete_nat_gateways(vpc_id)
+    delete_subnets(vpc_id)
+    delete_route_tables(vpc_id)
+    delete_security_groups(vpc_id)
     logger.info(f"Deleting VPC: {vpc_id}")
     delete_with_retries(ec2_client.delete_vpc, VpcId=vpc_id)
 
-# Main delete flow for VPC and associated resources
+# Main delete flow for VPC
 vpcs = ec2_client.describe_vpcs(
     Filters=[
         {'Name': 'cidr', 'Values': [vpc_cidr_block]},
@@ -252,6 +278,7 @@ vpcs = ec2_client.describe_vpcs(
 if vpcs['Vpcs']:
     vpc_id = vpcs['Vpcs'][0]['VpcId']
     logger.info(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
+    delete_bastion_server(vpc_id)
     delete_rds_instance()
     delete_load_balancer()
     delete_efs_and_mount_targets()
