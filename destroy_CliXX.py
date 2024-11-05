@@ -174,36 +174,58 @@ def delete_route53_record():
 
 delete_with_retries(delete_route53_record)
 
+
+def disassociate_and_release_elastic_ips():
+    addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
+    for address in addresses:
+        public_ip = address.get('PublicIp')
+        allocation_id = address.get('AllocationId')
+
+        # Attempt to disassociate if an association exists
+        if 'AssociationId' in address:
+            association_id = address['AssociationId']
+            try:
+                logger.info(f"Disassociating Elastic IP: {public_ip}")
+                delete_with_retries(ec2_client.disassociate_address, AssociationId=association_id)
+            except ClientError as e:
+                if "AuthFailure" in str(e):
+                    logger.error(f"No permission to disassociate Elastic IP {public_ip}: {e}")
+                    continue  # Skip if no permission, but continue with other IPs
+                else:
+                    raise
+
+        # Attempt to release the Elastic IP
+        try:
+            logger.info(f"Releasing Elastic IP: {public_ip}")
+            delete_with_retries(ec2_client.release_address, AllocationId=allocation_id)
+        except ClientError as e:
+            if "AuthFailure" in str(e):
+                logger.error(f"No permission to release Elastic IP {public_ip}: {e}")
+                continue
+            else:
+                raise
+
+
 def delete_internet_gateways(vpc_id):
+    disassociate_and_release_elastic_ips()  # Ensure IPs are disassociated first
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
     for igw in igws['InternetGateways']:
         igw_id = igw['InternetGatewayId']
         logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
+        
+        # Detach the gateway
+        try:
+            delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
+        except ClientError as e:
+            if "DependencyViolation" in str(e):
+                logger.error(f"DependencyViolation: Could not detach IGW {igw_id}. Remaining dependencies must be cleared.")
+                continue  # Proceed with other gateways if there's a dependency issue
+            else:
+                raise
 
-        # Handle associated Elastic IPs
-        addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
-        for address in addresses:
-            if 'AssociationId' in address:
-                try:
-                    logger.info(f"Releasing Elastic IP: {address['PublicIp']}")
-                    delete_with_retries(ec2_client.disassociate_address, AssociationId=address['AssociationId'])
-                except ClientError as e:
-                    if 'AuthFailure' in str(e):
-                        logger.error(f"No permission to disassociate Elastic IP {address['PublicIp']}: {e}")
-                        continue
-                    else:
-                        raise
-
-            # Attempt to release the IP address
-            try:
-                ec2_client.release_address(AllocationId=address['AllocationId'])
-                logger.info(f"Elastic IP {address['PublicIp']} released.")
-            except ClientError as e:
-                logger.error(f"Failed to release Elastic IP {address['PublicIp']}: {e}")
-
-        # Detach and delete the Internet Gateway
-        delete_with_retries(ec2_client.detach_internet_gateway, InternetGatewayId=igw_id, VpcId=vpc_id)
+        # Delete the gateway
         delete_with_retries(ec2_client.delete_internet_gateway, InternetGatewayId=igw_id)
+
 
 def delete_nat_gateways(vpc_id):
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
