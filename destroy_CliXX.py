@@ -261,7 +261,7 @@ def delete_vpc():
         vpc_id = vpcs['Vpcs'][0]['VpcId']
         print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
-        # Delete all subnets after removing NAT gateways and network interfaces
+        # Delete all subnets after removing NAT gateways and internet gateways
         delete_nat_gateways(vpc_id)
         delete_internet_gateways(vpc_id)
 
@@ -269,10 +269,13 @@ def delete_vpc():
         route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
         for rt in route_tables['RouteTables']:
             if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
-                ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
-                print(f"Route Table '{rt['RouteTableId']}' deleted.")
+                try:
+                    ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
+                    print(f"Route Table '{rt['RouteTableId']}' deleted.")
+                except Exception as e:
+                    print(f"Failed to delete Route Table '{rt['RouteTableId']}': {e}")
 
-        # Delete security groups, then disassociate and release Elastic IPs
+        # Delete security groups and Elastic IPs
         delete_security_groups()
         disassociate_and_release_elastic_ips()
 
@@ -283,7 +286,7 @@ def delete_vpc():
                 ec2_client.delete_subnet(SubnetId=subnet['SubnetId'])
                 print(f"Subnet '{subnet['SubnetId']}' deleted.")
             except Exception as e:
-                print(f"Failed to delete subnet '{subnet['SubnetId']}': {e}")
+                print(f"Failed to delete Subnet '{subnet['SubnetId']}': {e}")
 
         # Finally, delete the VPC
         try:
@@ -293,7 +296,6 @@ def delete_vpc():
             print(f"Failed to delete VPC '{vpc_id}': {e}")
     else:
         print(f"No VPC found with Name '{vpc_name}'")
-
 
 # Execute deletions
 delete_bastion_server()
@@ -306,7 +308,4 @@ delete_autoscaling_group()
 delete_launch_template()
 delete_security_groups()
 delete_db_subnet_group()
-disassociate_and_release_elastic_ips()
-delete_nat_gateways()
-delete_internet_gateways()
-delete_vpc()
+delete_vpc()  # This will call delete_nat_gateways and delete_internet_gateways with the correct vpc_id
