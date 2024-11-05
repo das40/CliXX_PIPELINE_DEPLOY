@@ -46,7 +46,7 @@ autoscaling_client = boto3.client('autoscaling', region_name="us-east-1",
 db_instance_name = 'wordpressdbclixx'
 lb_name = 'CLIXX-LoadBalancer'
 efs_name = 'CLiXX-EFS'
-tg_name = 'CLiXX-TG'
+tg_name = 'CLIXX-TG'
 autoscaling_group_name = 'CLiXX-ASG'
 launch_template_name = 'CLiXX-LT'
 hosted_zone_id = 'Z0881876FFUR3OKRNM20'
