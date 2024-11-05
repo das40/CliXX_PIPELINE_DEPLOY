@@ -154,15 +154,32 @@ def delete_nat_gateways(vpc_id):
         ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
         ec2_client.get_waiter('nat_gateway_deleted').wait(NatGatewayIds=[nat_gw_id])
 
+def disassociate_and_release_elastic_ips():
+    addresses = ec2_client.describe_addresses(Filters=[{'Name': 'domain', 'Values': ['vpc']}])['Addresses']
+    for address in addresses:
+        public_ip = address['PublicIp']
+        allocation_id = address['AllocationId']
+        # Disassociate if there is an association
+        if 'AssociationId' in address:
+            association_id = address['AssociationId']
+            logger.info(f"Disassociating Elastic IP: {public_ip}")
+            ec2_client.disassociate_address(AssociationId=association_id)
+            time.sleep(5)  # Brief wait to ensure disassociation completes
+        # Release the EIP
+        logger.info(f"Releasing Elastic IP: {public_ip}")
+        ec2_client.release_address(AllocationId=allocation_id)
+
 def delete_internet_gateways(vpc_id):
+    # Ensure all Elastic IPs are disassociated and released before detaching IGW
+    disassociate_and_release_elastic_ips()
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])['InternetGateways']
     for igw in igws:
         igw_id = igw['InternetGatewayId']
         logger.info(f"Detaching and deleting Internet Gateway: {igw_id}")
         ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
         ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
-
 def delete_vpc(vpc_id):
+    delete_internet_gateways(vpc_id)
     terminate_instances(vpc_id)
     delete_subnets(vpc_id)
     delete_nat_gateways(vpc_id)
