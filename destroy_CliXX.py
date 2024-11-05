@@ -59,7 +59,7 @@ bastion_tag_key = 'Name'
 bastion_tag_value = 'CLIXX-BastionHost'
 WAIT_TIMEOUT = 600
 
-def wait_for_deletion(check_func, check_args, interval=10, timeout=WAIT_TIMEOUT):
+def wait_for_deletion(check_func, check_args={}, interval=10, timeout=WAIT_TIMEOUT):
     """Wait for a resource deletion to complete with a timeout."""
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -70,7 +70,7 @@ def wait_for_deletion(check_func, check_args, interval=10, timeout=WAIT_TIMEOUT)
         time.sleep(interval)
     print("Timed out waiting for resource to delete.")
     return False
-##################### Delete the Bastion Server instance
+
 def delete_bastion_server():
     bastion_instances = ec2_client.describe_instances(
         Filters=[
@@ -89,25 +89,19 @@ def delete_bastion_server():
             waiter.wait(InstanceIds=[instance_id])
             print(f"Bastion server instance '{instance_id}' terminated.")
 
-
-##################### Delete the DB instance
-# Delete RDS instance
 def delete_rds_instance():
     try:
         rds_client.delete_db_instance(DBInstanceIdentifier=db_instance_name, SkipFinalSnapshot=True)
         print(f"RDS instance '{db_instance_name}' deletion initiated.")
         
-        # Wait for RDS instance deletion with timeout
         wait_for_deletion(
-            check_func=lambda **args: any(db['DBInstanceIdentifier'] == db_instance_name for db in rds_client.describe_db_instances()['DBInstances']),
-            check_args={}
+            check_func=lambda **args: any(db['DBInstanceIdentifier'] == db_instance_name for db in rds_client.describe_db_instances()['DBInstances'])
         )
     except rds_client.exceptions.DBInstanceNotFoundFault:
         print(f"RDS instance '{db_instance_name}' not found.")
     except Exception as e:
         print(f"Error deleting RDS instance: {e}")
 
-################### Delete Application Load Balancer
 def delete_load_balancer():
     load_balancers = elbv2_client.describe_load_balancers()
     for lb in load_balancers['LoadBalancers']:
@@ -117,31 +111,6 @@ def delete_load_balancer():
             print(f"Application Load Balancer '{lb_name}' deleted.")
             break
 
-##################### Delete mount targets before deleting EFS
-def delete_efs():
-    fs_info = efs_client.describe_file_systems()
-    file_system_id = None
-    for fs in fs_info['FileSystems']:
-        tags = efs_client.list_tags_for_resource(ResourceId=fs['FileSystemId'])['Tags']
-        if any(tag['Key'] == 'Name' and tag['Value'] == efs_name for tag in tags):
-            file_system_id = fs['FileSystemId']
-            print(f"Found EFS with File System ID: {file_system_id}")
-            break
-
-    if file_system_id:
-        mount_targets_info = efs_client.describe_mount_targets(FileSystemId=file_system_id)
-        for mount_target in mount_targets_info['MountTargets']:
-            mount_target_id = mount_target['MountTargetId']
-            efs_client.delete_mount_target(MountTargetId=mount_target_id)
-            print(f"Deleted mount target: {mount_target_id}")
-            while efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']:
-                print(f"Waiting for mount target {mount_target_id} to delete...")
-                time.sleep(5)
-        efs_client.delete_file_system(FileSystemId=file_system_id)
-        print(f"Deleted EFS with File System ID: {file_system_id}")
-    else:
-        print(f"No EFS found with the name '{efs_name}'.")
-# Delete EFS and mount targets with timeout
 def delete_efs_and_mount_targets():
     try:
         fs_info = efs_client.describe_file_systems()
@@ -150,20 +119,17 @@ def delete_efs_and_mount_targets():
         if file_system_id:
             print(f"Found EFS '{efs_name}' with ID: {file_system_id}")
 
-            # Delete mount targets
             mount_targets = efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']
             for mt in mount_targets:
                 mount_target_id = mt['MountTargetId']
                 efs_client.delete_mount_target(MountTargetId=mount_target_id)
                 print(f"Deleted mount target: {mount_target_id}")
 
-                # Wait for mount target to be deleted with timeout
                 wait_for_deletion(
                     check_func=lambda mt_id: any(mount['MountTargetId'] == mt_id for mount in efs_client.describe_mount_targets(FileSystemId=file_system_id)['MountTargets']),
                     check_args={'mt_id': mount_target_id}
                 )
 
-            # Delete EFS
             efs_client.delete_file_system(FileSystemId=file_system_id)
             print(f"EFS '{efs_name}' with ID: {file_system_id} deleted.")
         else:
@@ -171,7 +137,6 @@ def delete_efs_and_mount_targets():
     except Exception as e:
         print(f"Error deleting EFS or mount targets: {e}")
 
-#################### Delete Target Group
 def delete_target_group():
     response = elbv2_client.describe_target_groups(Names=[tg_name])
     if response['TargetGroups']:
@@ -179,7 +144,6 @@ def delete_target_group():
         elbv2_client.delete_target_group(TargetGroupArn=tg_arn)
         print(f"Target Group '{tg_name}' deleted.")
 
-################## Delete Route 53 record
 def delete_route53_record():
     response = route53_client.list_resource_record_sets(HostedZoneId=hosted_zone_id)
     for record in response['ResourceRecordSets']:
@@ -193,13 +157,11 @@ def delete_route53_record():
             print(f"Record '{record_name}' deleted.")
             break
 
-#################### Delete Auto Scaling Group 
 def delete_autoscaling_group():
-    response = autoscaling_client.delete_auto_scaling_group(
+    autoscaling_client.delete_auto_scaling_group(
         AutoScalingGroupName=autoscaling_group_name,
         ForceDelete=True
     )
-    print("Auto Scaling Group deleted:", response)
     while True:
         asg_status = autoscaling_client.describe_auto_scaling_groups(AutoScalingGroupNames=[autoscaling_group_name])
         if not asg_status['AutoScalingGroups']:
@@ -207,15 +169,13 @@ def delete_autoscaling_group():
             break
         time.sleep(30)
 
-#################### Delete Launch Template
 def delete_launch_template():
     response = ec2_client.describe_launch_templates(Filters=[{'Name': 'launch-template-name', 'Values': [launch_template_name]}])
     if response['LaunchTemplates']:
         launch_template_id = response['LaunchTemplates'][0]['LaunchTemplateId']
         ec2_client.delete_launch_template(LaunchTemplateId=launch_template_id)
-        print("Launch Template deleted:", launch_template_id)
+        print(f"Launch Template '{launch_template_name}' deleted.")
 
-#################### Delete Security Groups
 def delete_security_groups():
     for sg_name in [public_sg_name, private_sg_name]:
         security_groups = ec2_client.describe_security_groups(Filters=[{'Name': 'group-name', 'Values': [sg_name]}])
@@ -224,7 +184,6 @@ def delete_security_groups():
             ec2_client.delete_security_group(GroupId=sg_id)
             print(f"Security Group '{sg_name}' deleted.")
 
-#################### Delete DB Subnet Group
 def delete_db_subnet_group():
     response = rds_client.describe_db_subnet_groups()
     db_subnet_group_exists = any(subnet['DBSubnetGroupName'] == DBSubnetGroupName for subnet in response['DBSubnetGroups'])
@@ -232,32 +191,7 @@ def delete_db_subnet_group():
         rds_client.delete_db_subnet_group(DBSubnetGroupName=DBSubnetGroupName)
         print(f"DB Subnet Group '{DBSubnetGroupName}' deleted.")
 
-#################### Delete the VPC and Dependencies
-def get_vpc_id_by_name(vpc_name):
-    """Retrieve the VPC ID using the VPC's Name tag."""
-    vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'tag:Name', 'Values': [vpc_name]}])
-    if vpcs['Vpcs']:
-        vpc_id = vpcs['Vpcs'][0]['VpcId']
-        print(f"Found VPC with ID: {vpc_id}")
-        return vpc_id
-    else:
-        print(f"No VPC found with the name '{vpc_name}'")
-        return None
-
-def wait_for_deletion(check_func, interval=10, timeout=WAIT_TIMEOUT):
-    """Wait for a resource deletion to complete with a timeout."""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        if not check_func():
-            print("Resource deleted successfully.")
-            return True
-        print("Waiting for resource to delete...")
-        time.sleep(interval)
-    print("Timed out waiting for resource to delete.")
-    return False
-
 def disassociate_and_release_elastic_ips():
-    """Disassociates and releases all Elastic IPs."""
     addresses = ec2_client.describe_addresses()['Addresses']
     for address in addresses:
         allocation_id = address['AllocationId']
@@ -276,81 +210,54 @@ def disassociate_and_release_elastic_ips():
             print(f"Failed to release Elastic IP {address['PublicIp']}: {e}")
 
 def delete_nat_gateways(vpc_id):
-    """Deletes all NAT Gateways in the specified VPC."""
     nat_gateways = ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways']
     for nat_gw in nat_gateways:
         nat_gw_id = nat_gw['NatGatewayId']
         ec2_client.delete_nat_gateway(NatGatewayId=nat_gw_id)
         print(f"Deleting NAT Gateway: {nat_gw_id}")
         
-        # Wait for NAT Gateway to delete
         wait_for_deletion(lambda: any(ng['NatGatewayId'] == nat_gw_id for ng in ec2_client.describe_nat_gateways(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['NatGateways']))
 
 def delete_internet_gateways(vpc_id):
-    """Detaches and deletes all internet gateways in the specified VPC."""
     igws = ec2_client.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])['InternetGateways']
     for igw in igws:
         igw_id = igw['InternetGatewayId']
-        try:
-            ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
-            print(f"Detached Internet Gateway: {igw_id}")
-        except Exception as e:
-            print(f"Failed to detach Internet Gateway {igw_id}: {e}")
-        
+        ec2_client.detach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
         ec2_client.delete_internet_gateway(InternetGatewayId=igw_id)
         print(f"Deleted Internet Gateway: {igw_id}")
 
-def delete_vpc(vpc_id):
-    """Deletes all VPC-related resources before deleting the VPC itself."""
-    print(f"Deleting all dependencies in VPC: {vpc_id}")
-    disassociate_and_release_elastic_ips()
-    delete_nat_gateways(vpc_id)
-    delete_internet_gateways(vpc_id)
+def delete_vpc():
+    vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'tag:Name', 'Values': [vpc_name]}])
+    if vpcs['Vpcs']:
+        vpc_id = vpcs['Vpcs'][0]['VpcId']
+        print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
 
-    # Finally, delete the VPC
-    try:
-        ec2_client.delete_vpc(VpcId=vpc_id)
-        print(f"VPC {vpc_id} deleted.")
-    except Exception as e:
-        print(f"Failed to delete VPC {vpc_id}: {e}")
-
-# Main deletion flow
-# Delete VPC if it exists
-if vpcs['Vpcs']:
-    vpc_id = vpcs['Vpcs'][0]['VpcId']
-    print(f"VPC found: {vpc_id} with Name '{vpc_name}'. Deleting dependencies...")
-
-    # Delete VPC
-    ec2_client.delete_vpc(VpcId=vpc_id)
-    print(f"VPC '{vpc_id}' with Name '{vpc_name}' deleted.")
-else:
-    print(f"No VPC found with CIDR block {vpc_cidr_block} and Name '{vpc_name}'")
-
-
-        # 3. Delete subnets
         subnets = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
         for subnet in subnets['Subnets']:
             ec2_client.delete_subnet(SubnetId=subnet['SubnetId'])
             print(f"Subnet '{subnet['SubnetId']}' deleted.")
 
-        # 4. Delete route tables (except the main route table)
         route_tables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
         for rt in route_tables['RouteTables']:
             if not any(assoc.get('Main', False) for assoc in rt.get('Associations', [])):
                 ec2_client.delete_route_table(RouteTableId=rt['RouteTableId'])
                 print(f"Route Table '{rt['RouteTableId']}' deleted.")
 
-        # 5. Delete security groups
         delete_security_groups()
+        disassociate_and_release_elastic_ips()
+        delete_nat_gateways(vpc_id)
+        delete_internet_gateways(vpc_id)
 
-        
+        ec2_client.delete_vpc(VpcId=vpc_id)
+        print(f"VPC '{vpc_id}' with Name '{vpc_name}' deleted.")
+    else:
+        print(f"No VPC found with Name '{vpc_name}'")
 
 # Execute deletions
-delete_bastion_server() 
+delete_bastion_server()
 delete_rds_instance()
 delete_load_balancer()
 delete_efs_and_mount_targets()
-delete_efs()
 delete_target_group()
 delete_route53_record()
 delete_autoscaling_group()
