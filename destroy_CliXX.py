@@ -10,7 +10,7 @@ logger = logging.getLogger()
 
 # AWS Configuration Variables
 aws_region = "us-east-1"
-vpc_name = "STACK-CP-VPC"
+vpc_name = "CLIXXSTACKVPC"
 security_group_names = ['CLIXX-PublicSG', 'CLIXX-PrivateSG']
 db_instance_identifiers = ['wordpressdbclixx']
 efs_names = ['CLiXX-EFS']
