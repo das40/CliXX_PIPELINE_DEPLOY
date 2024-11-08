@@ -171,6 +171,23 @@ load_balancer_sg_id = create_security_group('CLIXX-LoadBalancerSG', 'Load Balanc
 mysql_db_sg_id = create_security_group('CLIXX-MySQLDBSG', 'MySQL DB SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}])
 oracle_db_sg_id = create_security_group('CLIXX-OracleDBSG', 'Oracle DB SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 1521, 'ToPort': 1521, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}])
 
+
+# Create DB Subnet Group if it does not exist
+try:
+    clixx_rds_client.create_db_subnet_group(
+        DBSubnetGroupName='CLIXX-DBSubnetGroup',
+        DBSubnetGroupDescription='Subnet group for CLIXX database instances',
+        SubnetIds=clixx_db_private_subnet_ids,  # Use your private subnets for DB
+        Tags=[{'Key': 'Name', 'Value': 'CLIXX-DBSubnetGroup'}]
+    )
+    logger.info("DB Subnet Group created: CLIXX-DBSubnetGroup")
+except ClientError as e:
+    if e.response['Error']['Code'] == 'DBSubnetGroupAlreadyExistsFault':
+        logger.info("DB Subnet Group already exists: CLIXX-DBSubnetGroup")
+    else:
+        logger.error(f"Failed to create DB Subnet Group: {e}")
+
+
 ## --- Create RDS Instances ---
 
 # MySQL RDS Instance (for application database)
