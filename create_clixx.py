@@ -218,7 +218,7 @@ try:
         bastion_instance = clixx_ec2_resource.create_instances(
             ImageId='ami-00f251754ac5da7f0',  # Replace with a suitable Linux AMI ID for your region
             InstanceType='t2.micro',          # Adjust instance type as necessary
-            KeyName='bastionkey',             # Use your existing key pair or create a new one
+            KeyName='bastionkey.pem',             # Use your existing key pair or create a new one
             MinCount=1,
             MaxCount=1,
             NetworkInterfaces=[
