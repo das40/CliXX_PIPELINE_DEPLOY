@@ -21,6 +21,7 @@ role_arn = 'arn:aws:iam::619071313311:role/Engineer'
 db_subnet_group_names = ['clixxstackdbsubnetgroup']
 hosted_zone_id = "Z0881876FFUR3OKRNM20"
 record_name= "dev.clixx-dasola.com"
+target_group_names=CLIXX-TG
 
 # Assume Role to interact with AWS resources
 sts_client = boto3.client('sts')
@@ -204,6 +205,31 @@ def wait_for_termination(instance_ids):
             break
         logger.info(f"Still waiting for instances to terminate: {[instance['InstanceId'] for instance in running_instances]}")
         time.sleep(10)
+      
+def delete_target_groups(target_group_names):
+    try:
+        # Describe all target groups
+        response = elbv2_client.describe_target_groups()
+        target_groups_to_delete = []
+        
+        for tg in response['TargetGroups']:
+            # Check if target group is associated with a load balancer to be deleted
+            associated_lb = elbv2_client.describe_target_health(TargetGroupArn=tg['TargetGroupArn'])
+            if associated_lb['TargetHealthDescriptions']:
+                lb_arn = associated_lb['TargetHealthDescriptions'][0]['Target']['LoadBalancerArn']
+                lb_name = next((lb['LoadBalancerName'] for lb in elbv2_client.describe_load_balancers()['LoadBalancers'] if lb['LoadBalancerArn'] == lb_arn), None)
+                if lb_name in load_balancer_names:
+                    target_groups_to_delete.append(tg['TargetGroupArn'])
+        
+        # Delete each target group
+        for tg_arn in target_groups_to_delete:
+            elbv2_client.delete_target_group(TargetGroupArn=tg_arn)
+            logger.info(f"Deleted Target Group with ARN: {tg_arn}")
+            time.sleep(5)  # Wait briefly to ensure deletion takes effect
+
+    except ClientError as e:
+        logger.error(f"Error deleting Target Groups: {e}")
+      
 
 def delete_load_balancers(load_balancer_names):
     try:
@@ -631,6 +657,7 @@ def delete_vpcs(vpc_name, asg_names, load_balancer_names, db_instance_identifier
             delete_instances_by_names(instance_names_to_delete)
             delete_auto_scaling_groups(asg_names=asg_names)
             release_public_ips()
+            delete_target_groups(target_group_names)
             delete_load_balancers(load_balancer_names=load_balancer_names)
             delete_rds_instances(db_instance_identifiers=db_instance_identifiers)
             delete_efs(efs_names=efs_names)
