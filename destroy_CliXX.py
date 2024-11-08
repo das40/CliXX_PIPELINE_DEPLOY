@@ -21,7 +21,8 @@ role_arn = 'arn:aws:iam::619071313311:role/Engineer'
 db_subnet_group_names = ['clixxstackdbsubnetgroup']
 hosted_zone_id = "Z0881876FFUR3OKRNM20"
 record_name= "dev.clixx-dasola.com"
-target_group_names="CLIXX-TG"
+target_group_names = ["CLIXX-TG"]
+
 
 # Assume Role to interact with AWS resources
 sts_client = boto3.client('sts')
@@ -123,8 +124,12 @@ def wait_for_mount_target_deletion(mount_target_id):
 
 def delete_instances_by_names(instance_names):
     try:
-        # Describe all instances
         response = ec2_client.describe_instances()
+        if not response['Reservations']:
+            logger.info("No instances found to delete.")
+            return
+        # Continue as in your existing code
+
        
         instance_ids_to_terminate = []
 
@@ -213,10 +218,12 @@ def delete_target_groups(target_group_names):
         target_groups_to_delete = []
         
         for tg in response['TargetGroups']:
-            # Check if target group is associated with a load balancer to be deleted
+            # Check if the target group has associated targets
             associated_lb = elbv2_client.describe_target_health(TargetGroupArn=tg['TargetGroupArn'])
-            if associated_lb['TargetHealthDescriptions']:
+            if associated_lb.get('TargetHealthDescriptions') and associated_lb['TargetHealthDescriptions'][0].get('Target').get('LoadBalancerArn'):
                 lb_arn = associated_lb['TargetHealthDescriptions'][0]['Target']['LoadBalancerArn']
+                 # Continue as in your existing code
+
                 lb_name = next((lb['LoadBalancerName'] for lb in elbv2_client.describe_load_balancers()['LoadBalancers'] if lb['LoadBalancerArn'] == lb_arn), None)
                 if lb_name in load_balancer_names:
                     target_groups_to_delete.append(tg['TargetGroupArn'])
@@ -229,6 +236,7 @@ def delete_target_groups(target_group_names):
 
     except ClientError as e:
         logger.error(f"Error deleting Target Groups: {e}")
+
       
 
 def delete_load_balancers(load_balancer_names):
