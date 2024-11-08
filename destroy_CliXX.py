@@ -21,7 +21,7 @@ role_arn = 'arn:aws:iam::619071313311:role/Engineer'
 db_subnet_group_names = ['clixxstackdbsubnetgroup']
 hosted_zone_id = "Z0881876FFUR3OKRNM20"
 record_name= "dev.clixx-dasola.com"
-target_group_names=CLIXX-TG
+target_group_names="CLIXX-TG"
 
 # Assume Role to interact with AWS resources
 sts_client = boto3.client('sts')
