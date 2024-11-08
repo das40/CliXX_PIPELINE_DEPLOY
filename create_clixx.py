@@ -1,3 +1,4 @@
+
 import boto3
 import logging
 import time, base64
@@ -149,6 +150,7 @@ for i, nat_gw_id in enumerate(clixx_nat_gateway_ids):
     for subnet_id in private_subnet_ids:
         clixx_priv_route_table.associate_with_subnet(SubnetId=subnet_id)
 
+
 # Function to create a security group
 def create_security_group(name, description, vpc_id, ingress_rules=None):
     sg = clixx_ec2_client.create_security_group(
@@ -169,7 +171,7 @@ def create_security_group(name, description, vpc_id, ingress_rules=None):
 bastion_sg_id = create_security_group('CLIXX-BastionSG', 'Bastion server SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 22, 'ToPort': 22, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}])
 load_balancer_sg_id = create_security_group('CLIXX-LoadBalancerSG', 'Load Balancer SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 80, 'ToPort': 80, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}, {'IpProtocol': 'tcp', 'FromPort': 443, 'ToPort': 443, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}])
 mysql_db_sg_id = create_security_group('CLIXX-MySQLDBSG', 'MySQL DB SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}])
-oracle_db_sg_id = create_security_group('CLIXX-OracleDBSG', 'Oracle DB SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 1521, 'ToPort': 1521, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}])
+#oracle_db_sg_id = create_security_group('CLIXX-OracleDBSG', 'Oracle DB SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 1521, 'ToPort': 1521, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}])
 
 
 # Create DB Subnet Group if it does not exist
@@ -188,7 +190,8 @@ except ClientError as e:
         logger.error(f"Failed to create DB Subnet Group: {e}")
 
 
-## --- Create RDS Instances ---
+
+# --- Create RDS Instances ---
 
 # MySQL RDS Instance (for application database)
 try:
@@ -209,6 +212,29 @@ try:
 except ClientError as e:
     logger.error(f"Failed to create MySQL RDS instance: {e}")
 
+# Define the function to update RDS security group
+def update_rds_security_group(clixx_ec2_client, rds_sg_id, clixx_app_sg_id):
+    try:
+        clixx_ec2_client.authorize_security_group_ingress(
+            GroupId=rds_sg_id,
+            IpPermissions=[
+                {
+                    'IpProtocol': 'tcp',
+                    'FromPort': 3306,
+                    'ToPort': 3306,
+                    'UserIdGroupPairs': [{'GroupId': clixx_app_sg_id}]
+                }
+            ]
+        )
+        logger.info(f"RDS Security Group {rds_sg_id} updated to allow access from CLIXX SG {clixx_app_sg_id}.")
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidPermission.Duplicate':
+            logger.info("Ingress rule already exists.")
+        else:
+            logger.error(f"Failed to update RDS security group: {e}")
+
+# Update the RDS security group to allow access from CLIXX application instances
+update_rds_security_group(clixx_ec2_client, mysql_db_sg_id, bastion_sg_id)  # Adjust bastion_sg_id to actual app SG if different
 
 
 # --- Deploy Bastion Hosts in Both Public Subnets ---
@@ -241,25 +267,6 @@ try:
 except ClientError as e:
     logger.error(f"Failed to deploy Bastion Hosts: {e}")
 
-# Oracle RDS Instance (for migrating STACK users)
-try:
-    clixx_oracle_rds_response = clixx_rds_client.create_db_instance(
-        DBInstanceIdentifier='CLIXX-OracleDB',
-        DBInstanceClass='db.r6g.large',
-        Engine='oracle-se2',
-        MasterUsername='oracleadmin',
-        MasterUserPassword='OraclePass123',
-        AllocatedStorage=150,
-        VpcSecurityGroupIds=[oracle_db_sg_id],
-        DBSubnetGroupName='CLIXX-DBSubnetGroup',
-        MultiAZ=True,
-        Tags=[{'Key': 'Name', 'Value': 'CLIXX-OracleDB'}],
-        PubliclyAccessible=False
-    )
-    logger.info("Oracle RDS instance created for STACK user migration.")
-except ClientError as e:
-    logger.error(f"Failed to create Oracle RDS instance: {e}")
-
 # --- Create EFS for shared storage ---
 try:
     clixx_efs_response = clixx_efs_client.create_file_system(
@@ -276,22 +283,32 @@ try:
         if efs_status['FileSystems'][0]['LifeCycleState'] == 'available':
             logger.info("EFS is now available.")
             break
-        time.sleep(10)
+        time.sleep(120)
 except ClientError as e:
     logger.error(f"Failed to create EFS: {e}")
     
     
+# Assuming 'clixx_file_system_id' is your EFS ID and 'mysql_db_sg_id' (or another) is used as the security group.
+efs_security_group_id = mysql_db_sg_id  # Adjust as necessary
+
 def create_efs_mount_targets(efs_id, subnet_ids, security_group_id):
     for subnet_id in subnet_ids:
         try:
-            mount_target = efs_client.create_mount_target(
+            mount_target = clixx_efs_client.create_mount_target(
                 FileSystemId=efs_id,
                 SubnetId=subnet_id,
                 SecurityGroups=[security_group_id]
             )
             logger.info(f"Created EFS mount target for subnet {subnet_id} with ID {mount_target['MountTargetId']}")
         except ClientError as e:
-            logger.error(f"Error creating mount target for subnet {subnet_id}: {e}")
+            if e.response['Error']['Code'] == 'MountTargetConflict':
+                logger.info(f"Mount target already exists in subnet {subnet_id}")
+            else:
+                logger.error(f"Error creating mount target for subnet {subnet_id}: {e}")
+
+# Call the function to create mount targets in each private subnet where CLIXX instances are hosted
+create_efs_mount_targets(clixx_file_system_id, clixx_app_private_subnet_ids, efs_security_group_id)
+
    
 
 # --- Create Application Load Balancer (ALB) ---
