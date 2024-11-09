@@ -122,42 +122,34 @@ def wait_for_mount_target_deletion(mount_target_id):
                 logger.error(f"Error checking Mount Target status: {e}")
                 break
 
-def delete_instances_by_names(instance_names):
+def delete_instances_by_names(instance_names, vpc_id):
     try:
-        response = ec2_client.describe_instances()
-        if not response['Reservations']:
-            logger.info("No instances found to delete.")
-            return
-        # Continue as in your existing code
-
-       
-        instance_ids_to_terminate = []
-
-        # Iterate over all reservations and instances
-        for reservation in response['Reservations']:
-            for instance in reservation['Instances']:
-                # Get the instance ID and name tag
-                instance_id = instance['InstanceId']
-                instance_tags = instance.get('Tags', [])
-                instance_name = next(
-                    (tag['Value'] for tag in instance_tags if tag['Key'] == 'Name'),
-                    None
-                )
-               
-                # Check if the instance name is in the provided list
-                if instance_name in instance_names:
-                    instance_ids_to_terminate.append(instance_id)
+        # Filter instances by VPC ID and instance name
+        response = ec2_client.describe_instances(
+            Filters=[
+                {'Name': 'vpc-id', 'Values': [vpc_id]},
+                {'Name': 'tag:Name', 'Values': instance_names}
+            ]
+        )
+        
+        # Check if there are instances that match the filters
+        instance_ids_to_terminate = [
+            instance['InstanceId']
+            for reservation in response['Reservations']
+            for instance in reservation['Instances']
+            if instance['State']['Name'] != 'terminated'  # Exclude already terminated instances
+        ]
 
         if instance_ids_to_terminate:
             logger.info(f"Terminating instances: {instance_ids_to_terminate}")
             ec2_client.terminate_instances(InstanceIds=instance_ids_to_terminate)
             wait_for_termination(instance_ids_to_terminate)
-
         else:
-            logger.info("No instances found to delete.")
+            logger.info("No instances found to delete with the specified names and VPC ID.")
 
     except ClientError as e:
         logger.error(f"Error deleting instances: {e}")
+
 
 def wait_for_termination(instance_ids):
     while True:
@@ -658,11 +650,11 @@ def delete_vpcs(vpc_name, asg_names, load_balancer_names, db_instance_identifier
         if not vpcs['Vpcs']:
             logger.info(f"VPC {vpc_name} not found, skipping deletion.")
             return
-       
+
         for vpc in vpcs['Vpcs']:
             vpc_id = vpc['VpcId']
             logger.info(f"Processing VPC: {vpc_id} (Name: {vpc_name})")
-            delete_instances_by_names(instance_names_to_delete)
+            delete_instances_by_names(instance_names_to_delete, vpc_id)
             delete_auto_scaling_groups(asg_names=asg_names)
             release_public_ips()
             delete_target_groups(target_group_names)
@@ -681,9 +673,10 @@ def delete_vpcs(vpc_name, asg_names, load_balancer_names, db_instance_identifier
             delete_all_elastic_ips()
             delete_subnets(vpc_id=vpc_id)
             delete_vpc(vpc_id=vpc_id)
-            logger.info("Clixx deployment cleanup Completed.")
+            logger.info("Clixx deployment cleanup completed.")
     except ClientError as e:
         logger.error(f"Error retrieving VPC: {e}")
+
  
 def main():
     delete_vpcs(vpc_name=vpc_name, asg_names=asg_names, load_balancer_names=load_balancer_names, db_instance_identifiers=db_instance_identifiers, efs_names=efs_names, db_subnet_group_names=db_subnet_group_names, security_group_names=security_group_names)
