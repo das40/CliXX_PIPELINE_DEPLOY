@@ -22,6 +22,7 @@ db_subnet_group_names = ['clixxstackdbsubnetgroup']
 hosted_zone_id = "Z0881876FFUR3OKRNM20"
 record_name= "dev.clixx-dasola.com"
 target_group_names = ["CLIXX-TG"]
+instance_names_to_delete = ['CLIXX-BastionHost-AZ1', 'CLIXX-BastionHost-AZ2', 'CLIXX']
 
 
 # Assume Role to interact with AWS resources
