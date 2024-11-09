@@ -166,12 +166,31 @@ def create_security_group(name, description, vpc_id, ingress_rules=None):
             IpPermissions=ingress_rules
         )
     return sg['GroupId']
+# Define the allow_lb_to_access_instances function
+def allow_lb_to_access_instances(ec2_client, instance_sg_id, lb_sg_id):
+    try:
+        ingress_rules = [
+            {'IpProtocol': 'tcp', 'FromPort': 80, 'ToPort': 80, 'UserIdGroupPairs': [{'GroupId': lb_sg_id}]},
+            {'IpProtocol': 'tcp', 'FromPort': 443, 'ToPort': 443, 'UserIdGroupPairs': [{'GroupId': lb_sg_id}]}
+        ]
+        ec2_client.authorize_security_group_ingress(
+            GroupId=instance_sg_id,
+            IpPermissions=ingress_rules
+        )
+        logger.info(f"Configured instance security group {instance_sg_id} to allow traffic from Load Balancer security group {lb_sg_id}")
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidPermission.Duplicate':
+            logger.info("Ingress rules already exist for Load Balancer access.")
+        else:
+            logger.error(f"Failed to configure instance security group {instance_sg_id} for Load Balancer access: {e}")
 
 # Security groups
 bastion_sg_id = create_security_group('CLIXX-BastionSG', 'Bastion server SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 22, 'ToPort': 22, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}])
 load_balancer_sg_id = create_security_group('CLIXX-LoadBalancerSG', 'Load Balancer SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 80, 'ToPort': 80, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}, {'IpProtocol': 'tcp', 'FromPort': 443, 'ToPort': 443, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}])
 mysql_db_sg_id = create_security_group('CLIXX-MySQLDBSG', 'MySQL DB SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 3306, 'ToPort': 3306, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}])
 #oracle_db_sg_id = create_security_group('CLIXX-OracleDBSG', 'Oracle DB SG', clixx_vpc_id, [{'IpProtocol': 'tcp', 'FromPort': 1521, 'ToPort': 1521, 'IpRanges': [{'CidrIp': '10.0.0.0/16'}]}])
+# Apply the rule to allow Load Balancer to access instance SG
+allow_lb_to_access_instances(clixx_ec2_client, mysql_db_sg_id, load_balancer_sg_id)
 
 
 # Create DB Subnet Group if it does not exist
