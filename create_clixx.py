@@ -241,6 +241,27 @@ else:
     except ClientError as e:
         logger.error(f"Failed to restore DB Instance '{clixx_db_instance_identifier}': {e}")
         raise
+def update_rds_security_group(ec2_client, db_sg_id, bastion_sg_id):
+    try:
+        # Define the rule to allow inbound access from the Bastion SG to the RDS SG
+        ingress_rules = [
+            {
+                'IpProtocol': 'tcp',
+                'FromPort': 3306,  # MySQL port, adjust if necessary
+                'ToPort': 3306,
+                'UserIdGroupPairs': [{'GroupId': bastion_sg_id}]
+            }
+        ]
+        ec2_client.authorize_security_group_ingress(
+            GroupId=db_sg_id,
+            IpPermissions=ingress_rules
+        )
+        logger.info(f"Added ingress rule to security group {db_sg_id} allowing access from {bastion_sg_id}")
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidPermission.Duplicate':
+            logger.info("Ingress rule already exists in the security group.")
+        else:
+            logger.error(f"Failed to update RDS security group {db_sg_id} with access from {bastion_sg_id}: {e}")
 
 
 # Update the RDS security group to allow access from CLIXX application instances
