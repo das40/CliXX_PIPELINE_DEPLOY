@@ -283,7 +283,7 @@ try:
         if efs_status['FileSystems'][0]['LifeCycleState'] == 'available':
             logger.info("EFS is now available.")
             break
-        time.sleep(120)
+        time.sleep(10)
 except ClientError as e:
     logger.error(f"Failed to create EFS: {e}")
     
