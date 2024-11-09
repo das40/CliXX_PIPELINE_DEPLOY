@@ -46,6 +46,95 @@ clixx_autoscaling_client = boto3.client('autoscaling', region_name='us-east-1',
                                         aws_secret_access_key=clixx_credentials['SecretAccessKey'],
                                         aws_session_token=clixx_credentials['SessionToken'])
 
+
+def wait_for_resource(resource_type, resource_id, vpc_id=None):
+    logger.info(f"Checking the status of {resource_type} {resource_id}...")
+    while True:
+        try:
+            if resource_type == 'vpc':
+                response = clixx_ec2_client.describe_vpcs(VpcIds=[resource_id])
+                state = response['Vpcs'][0]['State']
+                if state == 'available':
+                    logger.info(f"VPC {resource_id} is now available.")
+                    break
+                logger.info(f"VPC {resource_id} is currently {state}. Checking again in 20 seconds...")
+            elif resource_type == 'db_subnet_group':
+                response = clixx_rds_client.describe_db_subnet_groups(DBSubnetGroupName=resource_id)
+                status = response['DBSubnetGroups'][0]['SubnetGroupStatus']
+                if status == 'Complete':
+                    logger.info(f"DB Subnet Group {resource_id} is now complete.")
+                    break
+                logger.info(f"DB Subnet Group {resource_id} is currently {status}. Checking again in 20 seconds...")
+            elif resource_type == 'subnet':
+                response = clixx_ec2_client.describe_subnets(SubnetIds=[resource_id])
+                state = response['Subnets'][0]['State']
+                if state == 'available':
+                    logger.info(f"Subnet {resource_id} is now available.")
+                    break
+                logger.info(f"Subnet {resource_id} is currently {state}. Checking again in 20 seconds...")
+            elif resource_type == 'internet_gateway':
+                response = clixx_ec2_client.describe_internet_gateways(InternetGatewayIds=[resource_id])
+                attached = any(att['State'] == 'available' and att['VpcId'] == vpc_id for att in response['InternetGateways'][0]['Attachments'])
+                if attached:
+                    logger.info(f"Internet Gateway {resource_id} is attached to VPC {vpc_id}.")
+                    break
+                logger.info(f"Internet Gateway {resource_id} is currently not attached. Checking again in 20 seconds...")
+            elif resource_type == 'nat_gateway':
+                response = clixx_ec2_client.describe_nat_gateways(NatGatewayIds=[resource_id])
+                state = response['NatGateways'][0]['State']
+                if state == 'available':
+                    logger.info(f"NAT Gateway {resource_id} is now available.")
+                    break
+                logger.info(f"NAT Gateway {resource_id} is currently {state}. Checking again in 20 seconds...")
+            elif resource_type == 'security_group':
+                response = clixx_ec2_client.describe_security_groups(GroupIds=[resource_id])
+                if response['SecurityGroups']:
+                    logger.info(f"Security Group {resource_id} is available.")
+                    break
+                logger.info(f"Security Group {resource_id} is not available. Checking again in 20 seconds...")
+            elif resource_type == 'db_instance':
+                response = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=resource_id)
+                state = response['DBInstances'][0]['DBInstanceStatus']
+                if state == 'available':
+                    logger.info(f"RDS instance {resource_id} is now available.")
+                    break
+                logger.info(f"RDS instance {resource_id} is currently {state}. Checking again in 20 seconds...")
+            elif resource_type == 'efs':
+                response = clixx_efs_client.describe_file_systems(FileSystemId=resource_id)
+                state = response['FileSystems'][0]['LifeCycleState']
+                if state == 'available':
+                    logger.info(f"EFS {resource_id} is now available.")
+                    break
+                logger.info(f"EFS {resource_id} is currently {state}. Checking again in 20 seconds...")
+            elif resource_type == 'load_balancer':
+                response = clixx_elbv2_client.describe_load_balancers(LoadBalancerArns=[resource_id])
+                state = response['LoadBalancers'][0]['State']['Code']
+                if state == 'active':
+                    logger.info(f"Load Balancer {resource_id} is now active.")
+                    break
+                logger.info(f"Load Balancer {resource_id} is currently {state}. Checking again in 20 seconds...")
+            elif resource_type == 'route53_record':
+                if not vpc_id:
+                    logger.error("HostedZoneId (vpc_id) is None. Cannot check Route 53 records.")
+                    break
+                response = clixx_route53_client.list_resource_record_sets(HostedZoneId=vpc_id)
+                records = response['ResourceRecordSets']
+                if any(record['Name'] == f"{resource_id}." and record['Type'] == 'A' for record in records):
+                    logger.info(f"Route 53 Record {resource_id} is now available.")
+                    break
+                logger.info(f"Route 53 Record {resource_id} is currently not available. Checking again in 20 seconds...")
+            elif resource_type == 'auto_scaling_group':
+                response = clixx_autoscaling_client.describe_auto_scaling_groups(AutoScalingGroupNames=[resource_id])
+                asgs = response['AutoScalingGroups']
+                if asgs and asgs[0]['Status'] == 'Active':
+                    logger.info(f"Auto Scaling Group {resource_id} is now active.")
+                    break
+                logger.info(f"Auto Scaling Group {resource_id} is not yet active. Checking again in 20 seconds...")
+            time.sleep(20)
+        except ClientError as e:
+            logger.error(f"Error describing {resource_type}: {e}")
+            time.sleep(20)
+
 # Define CIDR ranges for VPC and subnets
 clixx_vpc_cidr_block = '10.0.0.0/16'
 clixx_public_subnets_cidrs = ['10.0.1.0/24', '10.0.2.0/24']
