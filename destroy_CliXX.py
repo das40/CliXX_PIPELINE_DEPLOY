@@ -11,7 +11,7 @@ logger = logging.getLogger()
 # AWS Configuration Variables
 aws_region = "us-east-1"
 vpc_name = "CLIXXSTACKVPC"
-security_group_names = ['CLIXX-PublicSG', 'CLIXX-PrivateSG', 'bastion_sg_id', 'oad_balancer_sg_id', 'mysql_db_sg_id']
+security_group_names = ['CLIXX-PublicSG', 'CLIXX-PrivateSG', 'CLIXX-LoadBalancerSG', 'CLIXX-MySQLDBSG', 'CLIXX-BastionSG']
 db_instance_identifiers = ['wordpressdbclixx']
 efs_names = ['CLIXX-EFS']
 load_balancer_names = ['CLIXX-LoadBalancer']
