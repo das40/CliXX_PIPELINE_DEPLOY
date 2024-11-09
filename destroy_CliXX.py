@@ -193,6 +193,21 @@ def delete_auto_scaling_groups(asg_names):
     except ClientError as e:
         logger.error(f"Error deleting Auto Scaling Groups: {e}")
 
+def delete_launch_templates(template_names):
+    for template_name in template_names:
+        try:
+            # Describe the launch template to get its ID
+            response = ec2_client.describe_launch_templates(Filters=[{'Name': 'launch-template-name', 'Values': [template_name]}])
+            if response['LaunchTemplates']:
+                template_id = response['LaunchTemplates'][0]['LaunchTemplateId']
+                ec2_client.delete_launch_template(LaunchTemplateId=template_id)
+                logger.info(f"Deleted Launch Template: {template_name} with ID: {template_id}")
+            else:
+                logger.info(f"No Launch Template found with the name: {template_name}, skipping deletion.")
+        except ClientError as e:
+            logger.error(f"Error deleting Launch Template {template_name}: {e}")
+
+
 
 def wait_for_termination(instance_ids):
     while True:
@@ -204,31 +219,7 @@ def wait_for_termination(instance_ids):
         logger.info(f"Still waiting for instances to terminate: {[instance['InstanceId'] for instance in running_instances]}")
         time.sleep(10)
       
-def delete_target_groups(target_group_names):
-    try:
-        # Describe all target groups
-        response = elbv2_client.describe_target_groups()
-        target_groups_to_delete = []
-        
-        for tg in response['TargetGroups']:
-            # Check if the target group has associated targets
-            associated_lb = elbv2_client.describe_target_health(TargetGroupArn=tg['TargetGroupArn'])
-            if associated_lb.get('TargetHealthDescriptions') and associated_lb['TargetHealthDescriptions'][0].get('Target').get('LoadBalancerArn'):
-                lb_arn = associated_lb['TargetHealthDescriptions'][0]['Target']['LoadBalancerArn']
-                 # Continue as in your existing code
 
-                lb_name = next((lb['LoadBalancerName'] for lb in elbv2_client.describe_load_balancers()['LoadBalancers'] if lb['LoadBalancerArn'] == lb_arn), None)
-                if lb_name in load_balancer_names:
-                    target_groups_to_delete.append(tg['TargetGroupArn'])
-        
-        # Delete each target group
-        for tg_arn in target_groups_to_delete:
-            elbv2_client.delete_target_group(TargetGroupArn=tg_arn)
-            logger.info(f"Deleted Target Group with ARN: {tg_arn}")
-            time.sleep(5)  # Wait briefly to ensure deletion takes effect
-
-    except ClientError as e:
-        logger.error(f"Error deleting Target Groups: {e}")
 
       
 
@@ -254,6 +245,32 @@ def delete_load_balancers(load_balancer_names):
             logger.info(f"Load Balancer not found, skipping deletion.")
         else:
             logger.error(f"Error deleting Load Balancer: {e}")
+
+def delete_target_groups(target_group_names):
+    for tg_name in target_group_names:
+        try:
+            # Describe the target group to get its ARN
+            response = elbv2_client.describe_target_groups(Names=[tg_name])
+            if response['TargetGroups']:
+                target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
+                
+                # Deregister any targets in the target group
+                targets = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
+                target_health_descriptions = targets.get('TargetHealthDescriptions', [])
+                
+                if target_health_descriptions:
+                    instance_ids = [t['Target']['Id'] for t in target_health_descriptions]
+                    elbv2_client.deregister_targets(TargetGroupArn=target_group_arn, Targets=[{'Id': id} for id in instance_ids])
+                    logger.info(f"Deregistered instances {instance_ids} from target group {tg_name}")
+
+                # Delete the target group
+                elbv2_client.delete_target_group(TargetGroupArn=target_group_arn)
+                logger.info(f"Deleted Target Group: {tg_name} with ARN: {target_group_arn}")
+            else:
+                logger.info(f"No Target Group found with the name: {tg_name}, skipping deletion.")
+        except ClientError as e:
+            logger.error(f"Error deleting Target Group {tg_name}: {e}")
+
 
 def wait_for_load_balancer_deletion(load_balancer_name):
     while True:
@@ -657,9 +674,10 @@ def delete_vpcs(vpc_name, asg_names, load_balancer_names, db_instance_identifier
             logger.info(f"Processing VPC: {vpc_id} (Name: {vpc_name})")
             delete_instances_by_names(instance_names_to_delete, vpc_id)
             delete_auto_scaling_groups(asg_names=asg_names)
+            delete_launch_templates(launch_template_names)  # Add this line
             release_public_ips()
-            delete_target_groups(target_group_names)
             delete_load_balancers(load_balancer_names=load_balancer_names)
+            delete_target_groups(target_group_names)
             delete_rds_instances(db_instance_identifiers=db_instance_identifiers)
             delete_efs(efs_names=efs_names)
             delete_nat_gateways(vpc_id=vpc_id)
