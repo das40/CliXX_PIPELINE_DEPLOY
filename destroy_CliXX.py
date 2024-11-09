@@ -16,6 +16,7 @@ db_instance_identifiers = ['wordpressdbclixx']
 efs_names = ['CLIXX-EFS']
 load_balancer_names = ['CLIXX-LoadBalancer']
 asg_names = ['CLIXX-ASG']
+launch_template_names = ['CLIXX-LT']
 instance_names_to_delete = ['CLIXX-BastionHost']
 role_arn = 'arn:aws:iam::619071313311:role/Engineer'
 db_subnet_group_names = ['clixx-dbsubnetgroup']
