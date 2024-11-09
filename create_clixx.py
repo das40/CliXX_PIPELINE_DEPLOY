@@ -193,45 +193,55 @@ except ClientError as e:
 
 # --- Create RDS Instances ---
 
-# MySQL RDS Instance (for application database)
-try:
-    clixx_mysql_rds_response = clixx_rds_client.create_db_instance(
-        DBInstanceIdentifier='CLIXX-MySQLDB',
-        DBInstanceClass='db.m6gd.large',
-        Engine='mysql',
-        MasterUsername='wordpressuser',
-        MasterUserPassword='W3lcome123',
-        AllocatedStorage=100,
-        VpcSecurityGroupIds=[mysql_db_sg_id],
-        DBSubnetGroupName='CLIXX-DBSubnetGroup',
-        MultiAZ=True,  # Ensure high availability
-        Tags=[{'Key': 'Name', 'Value': 'CLIXX-MySQLDB'}],
-        PubliclyAccessible=False
-    )
-    logger.info("MySQL RDS instance created for application database.")
-except ClientError as e:
-    logger.error(f"Failed to create MySQL RDS instance: {e}")
+# --- Check if the RDS snapshot is available ---
+# Define the DB instance identifier
+clixx_db_instance_identifier = 'wordpressdbclixx'  # The actual DB instance name to use
+clixx_db_snapshot_identifier = "arn:aws:rds:us-east-1:619071313311:snapshot:wordpressdbclixx-snapshot"
+clixx_db_instance_class = "db.m6gd.large"
 
-# Define the function to update RDS security group
-def update_rds_security_group(clixx_ec2_client, rds_sg_id, clixx_app_sg_id):
+try:
+    # Check if the snapshot exists and is available
+    snapshot_response = clixx_rds_client.describe_db_snapshots(DBSnapshotIdentifier=clixx_db_snapshot_identifier)
+    snapshot_status = snapshot_response['DBSnapshots'][0]['Status']
+    if snapshot_status != 'available':
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is in '{snapshot_status}' state. Waiting for it to become 'available'...")
+        while snapshot_status != 'available':
+            time.sleep(30)  # Wait 30 seconds before checking again
+            snapshot_response = clixx_rds_client.describe_db_snapshots(DBSnapshotIdentifier=clixx_db_snapshot_identifier)
+            snapshot_status = snapshot_response['DBSnapshots'][0]['Status']
+            logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' current state: '{snapshot_status}'")
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is now 'available'. Proceeding with the restore.")
+    else:
+        logger.info(f"Snapshot '{clixx_db_snapshot_identifier}' is 'available'. Proceeding with the restore.")
+except ClientError as e:
+    logger.error(f"Failed to describe snapshot '{clixx_db_snapshot_identifier}': {e}")
+    raise
+
+# --- Restore RDS Instance from Snapshot ---
+# Check if the DB instance already exists
+clixx_db_instances = clixx_rds_client.describe_db_instances()
+clixx_db_instance_identifiers = [db['DBInstanceIdentifier'] for db in clixx_db_instances['DBInstances']]
+
+if clixx_db_instance_identifier in clixx_db_instance_identifiers:
+    clixx_instances = clixx_rds_client.describe_db_instances(DBInstanceIdentifier=clixx_db_instance_identifier)
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' already exists. Details: {clixx_instances}")
+else:
+    logger.info(f"DB Instance '{clixx_db_instance_identifier}' not found. Restoring from snapshot...")
     try:
-        clixx_ec2_client.authorize_security_group_ingress(
-            GroupId=rds_sg_id,
-            IpPermissions=[
-                {
-                    'IpProtocol': 'tcp',
-                    'FromPort': 3306,
-                    'ToPort': 3306,
-                    'UserIdGroupPairs': [{'GroupId': clixx_app_sg_id}]
-                }
-            ]
+        clixx_response = clixx_rds_client.restore_db_instance_from_db_snapshot(
+            DBInstanceIdentifier=clixx_db_instance_identifier,
+            DBSnapshotIdentifier=clixx_db_snapshot_identifier,
+            DBInstanceClass=clixx_db_instance_class,
+            VpcSecurityGroupIds=[mysql_db_sg_id],  # Security group for DB access
+            DBSubnetGroupName='CLIXX-DBSubnetGroup',  # DB subnet group name
+            PubliclyAccessible=False,
+            Tags=[{'Key': 'Name', 'Value': 'wordpressdbclixx'}]
         )
-        logger.info(f"RDS Security Group {rds_sg_id} updated to allow access from CLIXX SG {clixx_app_sg_id}.")
+        logger.info(f"Restore operation initiated. Response: {clixx_response}")
     except ClientError as e:
-        if e.response['Error']['Code'] == 'InvalidPermission.Duplicate':
-            logger.info("Ingress rule already exists.")
-        else:
-            logger.error(f"Failed to update RDS security group: {e}")
+        logger.error(f"Failed to restore DB Instance '{clixx_db_instance_identifier}': {e}")
+        raise
+
 
 # Update the RDS security group to allow access from CLIXX application instances
 update_rds_security_group(clixx_ec2_client, mysql_db_sg_id, bastion_sg_id)  # Adjust bastion_sg_id to actual app SG if different
@@ -267,6 +277,27 @@ try:
 except ClientError as e:
     logger.error(f"Failed to deploy Bastion Hosts: {e}")
 
+## Add NFS access rule to the mysql_db_sg_id security group (right after creating security groups)
+try:
+    efs_security_group_rules = [
+        {
+            'IpProtocol': 'tcp',
+            'FromPort': 2049,  # NFS port
+            'ToPort': 2049,
+            'IpRanges': [{'CidrIp': clixx_vpc_cidr_block}]
+        }
+    ]
+    clixx_ec2_client.authorize_security_group_ingress(
+        GroupId=mysql_db_sg_id,
+        IpPermissions=efs_security_group_rules
+    )
+    logger.info(f"NFS access on port 2049 added to security group {mysql_db_sg_id} for EFS.")
+except ClientError as e:
+    if e.response['Error']['Code'] == 'InvalidPermission.Duplicate':
+        logger.info("NFS rule already exists in the security group.")
+    else:
+        logger.error(f"Failed to add NFS rule to security group {mysql_db_sg_id}: {e}")
+
 # --- Create EFS for shared storage ---
 try:
     clixx_efs_response = clixx_efs_client.create_file_system(
@@ -283,14 +314,11 @@ try:
         if efs_status['FileSystems'][0]['LifeCycleState'] == 'available':
             logger.info("EFS is now available.")
             break
-        time.sleep(10)
+        time.sleep(120)
 except ClientError as e:
     logger.error(f"Failed to create EFS: {e}")
-    
-    
-# Assuming 'clixx_file_system_id' is your EFS ID and 'mysql_db_sg_id' (or another) is used as the security group.
-efs_security_group_id = mysql_db_sg_id  # Adjust as necessary
 
+# Create EFS mount targets in required subnets (after EFS creation)
 def create_efs_mount_targets(efs_id, subnet_ids, security_group_id):
     for subnet_id in subnet_ids:
         try:
@@ -307,9 +335,7 @@ def create_efs_mount_targets(efs_id, subnet_ids, security_group_id):
                 logger.error(f"Error creating mount target for subnet {subnet_id}: {e}")
 
 # Call the function to create mount targets in each private subnet where CLIXX instances are hosted
-create_efs_mount_targets(clixx_file_system_id, clixx_app_private_subnet_ids, efs_security_group_id)
-
-   
+create_efs_mount_targets(clixx_file_system_id, clixx_app_private_subnet_ids, mysql_db_sg_id)
 
 # --- Create Application Load Balancer (ALB) ---
 try:
