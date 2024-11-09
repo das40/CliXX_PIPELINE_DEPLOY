@@ -247,31 +247,6 @@ def delete_load_balancers(load_balancer_names):
         else:
             logger.error(f"Error deleting Load Balancer: {e}")
 
-def delete_target_groups(target_group_names):
-    for tg_name in target_group_names:
-        try:
-            # Describe the target group to get its ARN
-            response = elbv2_client.describe_target_groups(Names=[tg_name])
-            if response['TargetGroups']:
-                target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
-                
-                # Deregister any targets in the target group
-                targets = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
-                target_health_descriptions = targets.get('TargetHealthDescriptions', [])
-                
-                if target_health_descriptions:
-                    instance_ids = [t['Target']['Id'] for t in target_health_descriptions]
-                    elbv2_client.deregister_targets(TargetGroupArn=target_group_arn, Targets=[{'Id': id} for id in instance_ids])
-                    logger.info(f"Deregistered instances {instance_ids} from target group {tg_name}")
-
-                # Delete the target group
-                elbv2_client.delete_target_group(TargetGroupArn=target_group_arn)
-                logger.info(f"Deleted Target Group: {tg_name} with ARN: {target_group_arn}")
-            else:
-                logger.info(f"No Target Group found with the name: {tg_name}, skipping deletion.")
-        except ClientError as e:
-            logger.error(f"Error deleting Target Group {tg_name}: {e}")
-
 
 def wait_for_load_balancer_deletion(load_balancer_name):
     while True:
@@ -303,6 +278,32 @@ def wait_for_deletion(check_function, not_found_error_code, resource_type):
                 logger.info(f"{resource_type} deleted successfully.")
                 break
             logger.error(f"Error checking {resource_type} status: {e}")
+
+def delete_target_groups(target_group_names):
+    for tg_name in target_group_names:
+        try:
+            # Describe the target group to get its ARN
+            response = elbv2_client.describe_target_groups(Names=[tg_name])
+            if response['TargetGroups']:
+                target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
+                
+                # Deregister any targets in the target group
+                targets = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
+                target_health_descriptions = targets.get('TargetHealthDescriptions', [])
+                
+                if target_health_descriptions:
+                    instance_ids = [t['Target']['Id'] for t in target_health_descriptions]
+                    elbv2_client.deregister_targets(TargetGroupArn=target_group_arn, Targets=[{'Id': id} for id in instance_ids])
+                    logger.info(f"Deregistered instances {instance_ids} from target group {tg_name}")
+
+                # Delete the target group
+                elbv2_client.delete_target_group(TargetGroupArn=target_group_arn)
+                logger.info(f"Deleted Target Group: {tg_name} with ARN: {target_group_arn}")
+            else:
+                logger.info(f"No Target Group found with the name: {tg_name}, skipping deletion.")
+        except ClientError as e:
+            logger.error(f"Error deleting Target Group {tg_name}: {e}")
+
 
 def delete_rds_instances(db_instance_identifiers):
     for db_instance_identifier in db_instance_identifiers:
