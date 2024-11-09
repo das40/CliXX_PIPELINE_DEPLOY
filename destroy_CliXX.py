@@ -11,17 +11,17 @@ logger = logging.getLogger()
 # AWS Configuration Variables
 aws_region = "us-east-1"
 vpc_name = "CLIXXSTACKVPC"
-security_group_names = ['CLIXX-PublicSG', 'CLIXX-PrivateSG']
+security_group_names = ['CLIXX-PublicSG', 'CLIXX-PrivateSG', 'bastion_sg_id', 'oad_balancer_sg_id', 'mysql_db_sg_id']
 db_instance_identifiers = ['wordpressdbclixx']
 efs_names = ['CLIXX-EFS']
 load_balancer_names = ['CLIXX-LoadBalancer']
 asg_names = ['CLIXX-ASG']
 instance_names_to_delete = ['CLIXX-BastionHost']
 role_arn = 'arn:aws:iam::619071313311:role/Engineer'
-db_subnet_group_names = ['clixxstackdbsubnetgroup']
+db_subnet_group_names = ['clixx-dbsubnetgroup']
 hosted_zone_id = "Z0881876FFUR3OKRNM20"
 record_name= "dev.clixx-dasola.com"
-target_group_names = ["CLIXX-TG"]
+target_group_names = ['CLIXX-TG']
 instance_names_to_delete = ['CLIXX-BastionHost-AZ1', 'CLIXX-BastionHost-AZ2', 'CLIXX']
 
 
