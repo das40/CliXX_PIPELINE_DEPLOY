@@ -286,13 +286,17 @@ def delete_target_groups(target_group_names):
             response = elbv2_client.describe_target_groups(Names=[tg_name])
             if response['TargetGroups']:
                 target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
-
-                # Loop over load balancer names to find their ARNs
+                
+                # Retrieve load balancer ARNs based on load balancer names
                 load_balancer_arns = [
                     lb['LoadBalancerArn'] for lb in elbv2_client.describe_load_balancers()['LoadBalancers']
                     if lb['LoadBalancerName'] in load_balancer_names
                 ]
-
+                
+                # If no load balancers are found, log and skip
+                if not load_balancer_arns:
+                    logger.info(f"No Load Balancer found with the names: {load_balancer_names}, skipping listener deletion.")
+                
                 # Delete listeners associated with the target group
                 for lb_arn in load_balancer_arns:
                     listeners = elbv2_client.describe_listeners(LoadBalancerArn=lb_arn)['Listeners']
