@@ -286,18 +286,25 @@ def delete_target_groups(target_group_names):
             response = elbv2_client.describe_target_groups(Names=[tg_name])
             if response['TargetGroups']:
                 target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
-                
-                # Delete any associated listeners with the Load Balancer
-                listeners = elbv2_client.describe_listeners(LoadBalancerArn=load_balancer_arn)['Listeners']
-                for listener in listeners:
-                    if listener['DefaultActions'][0]['TargetGroupArn'] == target_group_arn:
-                        elbv2_client.delete_listener(ListenerArn=listener['ListenerArn'])
-                        logger.info(f"Deleted listener {listener['ListenerArn']} associated with Target Group {tg_name}")
-                
+
+                # Loop over load balancer names to find their ARNs
+                load_balancer_arns = [
+                    lb['LoadBalancerArn'] for lb in elbv2_client.describe_load_balancers()['LoadBalancers']
+                    if lb['LoadBalancerName'] in load_balancer_names
+                ]
+
+                # Delete listeners associated with the target group
+                for lb_arn in load_balancer_arns:
+                    listeners = elbv2_client.describe_listeners(LoadBalancerArn=lb_arn)['Listeners']
+                    for listener in listeners:
+                        if listener['DefaultActions'][0]['TargetGroupArn'] == target_group_arn:
+                            elbv2_client.delete_listener(ListenerArn=listener['ListenerArn'])
+                            logger.info(f"Deleted listener {listener['ListenerArn']} associated with Target Group {tg_name}")
+
                 # Deregister any targets in the target group
                 targets = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
                 target_health_descriptions = targets.get('TargetHealthDescriptions', [])
-                
+
                 if target_health_descriptions:
                     instance_ids = [t['Target']['Id'] for t in target_health_descriptions]
                     elbv2_client.deregister_targets(TargetGroupArn=target_group_arn, Targets=[{'Id': id} for id in instance_ids])
@@ -310,6 +317,7 @@ def delete_target_groups(target_group_names):
                 logger.info(f"No Target Group found with the name: {tg_name}, skipping deletion.")
         except ClientError as e:
             logger.error(f"Error deleting Target Group {tg_name}: {e}")
+
 
 def delete_rds_instances(db_instance_identifiers):
     for db_instance_identifier in db_instance_identifiers:
